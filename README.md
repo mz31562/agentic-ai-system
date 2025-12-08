@@ -1,4 +1,4 @@
-🤖 Local AI Content Generator
+Local AI Content Generator
 A multi-agent system that generates social media content (text + images) entirely on your local machine. No API costs, no data leaving your computer, no rate limits.
 Why This Exists
 Got tired of paying for AI API calls for every little thing. Built this to run everything locally - text generation via Ollama, images via Stable Diffusion XL, all coordinated through a custom message bus architecture.
