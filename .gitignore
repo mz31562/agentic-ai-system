@@ -1,0 +1,44 @@
+cd C:\Users\MohammedZaid\Desktop\agentic-ai-system
+
+# Create .gitignore file
+notepad .gitignore
+```
+
+**Paste this into .gitignore:**
+```
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+
+# Project specific
+ComfyUI/
+generated_images/
+*.png
+*.jpg
+*.jpeg
+
+# Environment
+.env
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+*.temp
