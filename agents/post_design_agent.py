@@ -1,3 +1,4 @@
+# C:\Users\MohammedZaid\Desktop\agentic-ai-system\agents\post_design_agent.py
 import asyncio
 import re
 from typing import Dict, Any, Optional, List
@@ -6,17 +7,18 @@ import os
 
 from core.agent_base import BaseAgent
 from core.message_bus import MessageBus, Message
+from core.llm_manager import LLMManager, TaskComplexity
 
 logger = logging.getLogger(__name__)
 
 
 class PostDesignAgent(BaseAgent):
     """
-    PostDesign Agent - Specialist in creating post designs and content.
-    Supports multiple LLM backends: Claude, Ollama, Groq, HuggingFace
+    Enhanced PostDesign Agent with multi-LLM support.
+    Intelligently routes requests to the best available LLM backend.
     """
     
-    def __init__(self, message_bus: MessageBus, llm_config: Optional[Dict[str, Any]] = None):
+    def __init__(self, message_bus: MessageBus, llm_manager: LLMManager):
         super().__init__(
             agent_id="post_design_agent",
             name="PostDesign Agent",
@@ -25,106 +27,18 @@ class PostDesignAgent(BaseAgent):
                 "content_generation",
                 "design_creation",
                 "math_integration",
-                "creative_writing"
+                "creative_writing",
+                "multi_llm_support"
             ]
         )
         
-        # Default config
-        self.llm_config = llm_config or {
-            "backend": os.getenv("LLM_BACKEND", "ollama"),  # ollama, claude, groq, huggingface, mock
-            "model": os.getenv("LLM_MODEL", "llama3"),
-            "api_key": os.getenv("LLM_API_KEY"),
-            "base_url": os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-        }
-        
-        self.backend = self.llm_config["backend"]
-        self.model = self.llm_config["model"]
-        
-        # Initialize the appropriate client
-        self.client = None
-        self._initialize_backend()
+        self.llm_manager = llm_manager
         
         # Math-related keywords for detection
         self.math_keywords = [
             "fibonacci", "sequence", "calculate", "equation", "solve",
             "formula", "series", "pattern", "number", "math"
         ]
-    
-    
-    def _initialize_backend(self):
-        """Initialize the LLM backend based on configuration"""
-        try:
-            if self.backend == "ollama":
-                self._init_ollama()
-            elif self.backend == "claude":
-                self._init_claude()
-            elif self.backend == "groq":
-                self._init_groq()
-            elif self.backend == "huggingface":
-                self._init_huggingface()
-            elif self.backend == "mock":
-                logger.info("Using mock mode (no LLM)")
-                self.client = None
-            else:
-                logger.warning(f"Unknown backend '{self.backend}', falling back to mock mode")
-                self.client = None
-        except Exception as e:
-            logger.error(f"Failed to initialize {self.backend} backend: {e}")
-            logger.info("Falling back to mock mode")
-            self.backend = "mock"
-            self.client = None
-    
-    
-    def _init_ollama(self):
-        """Initialize Ollama client"""
-        try:
-            import ollama
-            self.client = ollama
-            logger.info(f"✅ Ollama initialized with model: {self.model}")
-            logger.info(f"   Base URL: {self.llm_config['base_url']}")
-        except ImportError:
-            logger.error("Ollama package not installed. Run: pip install ollama")
-            raise
-    
-    
-    def _init_claude(self):
-        """Initialize Anthropic Claude client"""
-        try:
-            from anthropic import Anthropic
-            api_key = self.llm_config["api_key"] or os.getenv("ANTHROPIC_API_KEY")
-            if not api_key:
-                raise ValueError("ANTHROPIC_API_KEY not provided")
-            self.client = Anthropic(api_key=api_key)
-            logger.info(f"✅ Claude initialized with model: {self.model}")
-        except ImportError:
-            logger.error("Anthropic package not installed. Run: pip install anthropic")
-            raise
-    
-    
-    def _init_groq(self):
-        """Initialize Groq client"""
-        try:
-            from groq import Groq
-            api_key = self.llm_config["api_key"] or os.getenv("GROQ_API_KEY")
-            if not api_key:
-                raise ValueError("GROQ_API_KEY not provided")
-            self.client = Groq(api_key=api_key)
-            logger.info(f"✅ Groq initialized with model: {self.model}")
-        except ImportError:
-            logger.error("Groq package not installed. Run: pip install groq")
-            raise
-    
-    
-    def _init_huggingface(self):
-        """Initialize HuggingFace client"""
-        try:
-            from huggingface_hub import InferenceClient
-            api_key = self.llm_config["api_key"] or os.getenv("HUGGINGFACE_API_KEY")
-            self.client = InferenceClient(token=api_key)
-            logger.info(f"✅ HuggingFace initialized with model: {self.model}")
-        except ImportError:
-            logger.error("HuggingFace Hub package not installed. Run: pip install huggingface-hub")
-            raise
     
     
     async def setup(self):
@@ -136,12 +50,11 @@ class PostDesignAgent(BaseAgent):
         )
         
         logger.info(f"PostDesign Agent subscribed to topic: design_request")
-        logger.info(f"Using backend: {self.backend} with model: {self.model}")
+        logger.info(f"Using Multi-LLM Manager with {len(self.llm_manager.backends)} backends")
     
     
     async def handle_message(self, message: Message):
         """Route incoming messages to appropriate handlers"""
-        
         if message.topic == "design_request":
             await self.handle_design_request(message)
         else:
@@ -164,7 +77,7 @@ class PostDesignAgent(BaseAgent):
                 logger.info("Math requirement detected, querying Math MCP Server...")
                 math_data = await self._query_math_server(user_message, message.correlation_id)
             
-            # Generate design using configured LLM backend
+            # Generate design using intelligent LLM selection
             design_result = await self._generate_design(user_message, math_data)
             
             # Send response back to Host Agent
@@ -175,13 +88,13 @@ class PostDesignAgent(BaseAgent):
                     "metadata": design_result["metadata"],
                     "math_data": math_data,
                     "request_id": request_id,
-                    "status": "completed",
-                    "backend_used": self.backend
+                    "status": "completed"
                 },
                 topic="design_response"
             )
             
-            logger.info(f"Design completed for request {request_id} using {self.backend}")
+            backend_used = design_result["metadata"].get("backend_used", "unknown")
+            logger.info(f"Design completed for request {request_id} using {backend_used}")
             
         except Exception as e:
             logger.error(f"Error processing design request: {e}", exc_info=True)
@@ -245,36 +158,139 @@ class PostDesignAgent(BaseAgent):
         user_message: str,
         math_data: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
-        """Generate design using configured LLM backend"""
+        """Generate design using intelligent LLM selection"""
         
         # Build prompt
         prompt = self._build_design_prompt(user_message, math_data)
         
+        # Determine task characteristics
+        task_type = self._classify_task_type(user_message)
+        complexity = self._assess_complexity(user_message)
+        
+        logger.info(f"Task classification: type={task_type}, complexity={complexity.value}")
+        
         try:
-            if self.backend == "ollama":
-                content = await self._call_ollama(prompt)
-            elif self.backend == "claude":
-                content = await self._call_claude(prompt)
-            elif self.backend == "groq":
-                content = await self._call_groq(prompt)
-            elif self.backend == "huggingface":
-                content = await self._call_huggingface(prompt)
-            else:
-                # Mock mode
-                content = self._generate_mock_design(user_message, math_data)
+            # Let the LLM manager select the best backend
+            result = await self.llm_manager.complete(
+                prompt=prompt,
+                task_type=task_type,
+                complexity=complexity,
+                max_tokens=1024,
+                temperature=0.8 if task_type == "creative" else 0.7,
+                prefer_local=True  # Prefer free/local when possible
+            )
+            
+            content = result["content"]
+            
+            # Build comprehensive metadata
+            metadata = {
+                "backend_used": result["backend"],
+                "provider": result["provider"],
+                "model": result["model"],
+                "tokens_used": result["tokens_used"],
+                "latency_ms": result["latency_ms"],
+                "cost": result["cost"],
+                "task_type": task_type,
+                "complexity": complexity.value,
+                "style": "modern",
+                "tone": "educational" if math_data else "engaging",
+                "contains_math": math_data is not None,
+                "colors": ["#3498db", "#2ecc71", "#f39c12"],
+                "emojis_used": True,
+                "word_count": len(user_message.split())
+            }
+            
+            logger.info(
+                f"Generation complete: {result['tokens_used']} tokens, "
+                f"{result['latency_ms']}ms, ${result['cost']:.6f}"
+            )
+            
+            return {
+                "content": content,
+                "metadata": metadata
+            }
+            
         except Exception as e:
-            logger.error(f"LLM call failed: {e}, falling back to mock")
+            logger.error(f"LLM generation failed: {e}", exc_info=True)
+            
+            # Fallback to mock
             content = self._generate_mock_design(user_message, math_data)
+            metadata = {
+                "backend_used": "mock",
+                "provider": "fallback",
+                "model": "none",
+                "tokens_used": 0,
+                "latency_ms": 0,
+                "cost": 0.0,
+                "error": str(e),
+                "style": "modern",
+                "tone": "educational" if math_data else "engaging",
+                "contains_math": math_data is not None
+            }
+            
+            return {
+                "content": content,
+                "metadata": metadata
+            }
+    
+    
+    def _classify_task_type(self, user_message: str) -> str:
+        """
+        Classify the type of task based on user message
         
-        # Extract metadata
-        metadata = self._extract_metadata(user_message, math_data)
-        metadata["backend"] = self.backend
-        metadata["model"] = self.model
+        Returns:
+            Task type: creative, code, reasoning, analytical, or general
+        """
+        message_lower = user_message.lower()
         
-        return {
-            "content": content,
-            "metadata": metadata
-        }
+        # Creative writing indicators
+        creative_keywords = ["story", "poem", "creative", "imagine", "describe", "write"]
+        if any(word in message_lower for word in creative_keywords):
+            return "creative"
+        
+        # Code-related indicators
+        code_keywords = ["code", "program", "function", "script", "debug", "algorithm"]
+        if any(word in message_lower for word in code_keywords):
+            return "code"
+        
+        # Reasoning/logic indicators
+        reasoning_keywords = ["analyze", "explain", "why", "how", "compare", "evaluate"]
+        if any(word in message_lower for word in reasoning_keywords):
+            return "reasoning"
+        
+        # Analytical indicators
+        analytical_keywords = ["data", "statistics", "trends", "patterns", "insights"]
+        if any(word in message_lower for word in analytical_keywords):
+            return "analytical"
+        
+        return "general"
+    
+    
+    def _assess_complexity(self, user_message: str) -> TaskComplexity:
+        """
+        Assess the complexity of the task
+        
+        Returns:
+            TaskComplexity enum value
+        """
+        word_count = len(user_message.split())
+        
+        # Simple: Short, straightforward requests
+        if word_count < 10:
+            return TaskComplexity.SIMPLE
+        
+        # Expert: Very long or contains complexity indicators
+        if word_count > 50 or any(word in user_message.lower() 
+                                   for word in ["complex", "detailed", "comprehensive", "in-depth"]):
+            return TaskComplexity.EXPERT
+        
+        # Complex: Moderate length with reasoning indicators
+        if word_count > 30 or any(word in user_message.lower() 
+                                   for word in ["analyze", "compare", "evaluate", "explain"]):
+            return TaskComplexity.COMPLEX
+        
+        # Medium: Default for moderate requests
+        return TaskComplexity.MEDIUM
     
     
     def _build_design_prompt(
@@ -307,55 +323,12 @@ Make sure to explain the math in an accessible, interesting way that fits natura
         return base_prompt
     
     
-    async def _call_ollama(self, prompt: str) -> str:
-        """Call Ollama API"""
-        response = await asyncio.to_thread(
-            self.client.chat,
-            model=self.model,
-            messages=[{"role": "user", "content": prompt}]
-        )
-        return response['message']['content']
-    
-    
-    async def _call_claude(self, prompt: str) -> str:
-        """Call Claude API"""
-        response = await asyncio.to_thread(
-            self.client.messages.create,
-            model=self.model or "claude-sonnet-4-20250514",
-            max_tokens=1024,
-            messages=[{"role": "user", "content": prompt}]
-        )
-        return response.content[0].text
-    
-    
-    async def _call_groq(self, prompt: str) -> str:
-        """Call Groq API"""
-        response = await asyncio.to_thread(
-            self.client.chat.completions.create,
-            model=self.model or "llama3-8b-8192",
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=1024
-        )
-        return response.choices[0].message.content
-    
-    
-    async def _call_huggingface(self, prompt: str) -> str:
-        """Call HuggingFace Inference API"""
-        response = await asyncio.to_thread(
-            self.client.text_generation,
-            prompt,
-            model=self.model or "meta-llama/Llama-2-7b-chat-hf",
-            max_new_tokens=512
-        )
-        return response
-    
-    
     def _generate_mock_design(
         self,
         user_message: str,
         math_data: Optional[Dict[str, Any]]
     ) -> str:
-        """Generate a mock design (fallback)"""
+        """Generate a mock design (fallback when no LLM available)"""
         if math_data and "fibonacci" in user_message.lower():
             return f"""🌟 The Magic of Fibonacci Sequence! 🌟
 
@@ -378,24 +351,8 @@ this mathematical pattern is nature's secret code!
 
 {user_message}
 
-[Generated in {self.backend} mode - Configure LLM backend for AI-generated content]
+[Generated in MOCK mode - Enable LLM backends in .env for AI-generated content]
 
 🎨 Engaging • 📱 Shareable • 💡 Informative
 
 #Creative #Design #Content"""
-    
-    
-    def _extract_metadata(
-        self,
-        user_message: str,
-        math_data: Optional[Dict[str, Any]]
-    ) -> Dict[str, Any]:
-        """Extract metadata about the design"""
-        return {
-            "style": "modern",
-            "tone": "educational" if math_data else "engaging",
-            "contains_math": math_data is not None,
-            "colors": ["#3498db", "#2ecc71", "#f39c12"],
-            "emojis_used": True,
-            "word_count": len(user_message.split())
-        }

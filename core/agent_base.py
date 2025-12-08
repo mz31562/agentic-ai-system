@@ -1,3 +1,4 @@
+# C:\Users\MohammedZaid\Desktop\agentic-ai-system\core\agent_base.py
 import asyncio
 import uuid
 from abc import ABC, abstractmethod
@@ -96,10 +97,13 @@ class BaseAgent(ABC):
         self.is_running = False
         self.status = "stopped"
         
-        # Wait for pending requests to complete (with timeout)
+        # Wait for pending requests to complete (with timeout) - handle cancellation
         if self.pending_requests:
             logger.info(f"Waiting for {len(self.pending_requests)} pending requests...")
-            await asyncio.sleep(1)  # Give time for cleanup
+            try:
+                await asyncio.wait_for(asyncio.sleep(1), timeout=2.0)
+            except (asyncio.CancelledError, asyncio.TimeoutError):
+                logger.info(f"Shutdown interrupted or timed out for '{self.name}'")
         
         logger.info(f"Agent '{self.name}' stopped")
     
