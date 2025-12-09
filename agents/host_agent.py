@@ -355,7 +355,6 @@ class HostAgent(BaseAgent):
                 request["design_result"] = message.payload
                 request["pending_responses"].remove("design")
                 
-                # If still waiting for image, don't respond yet
                 if request["pending_responses"]:
                     logger.info(f"Waiting for remaining responses: {request['pending_responses']}")
                     return
@@ -401,7 +400,6 @@ class HostAgent(BaseAgent):
                 request["image_result"] = message.payload
                 request["pending_responses"].remove("image")
                 
-                # If still waiting for design, don't respond yet
                 if request["pending_responses"]:
                     logger.info(f"Waiting for remaining responses: {request['pending_responses']}")
                     return
@@ -444,9 +442,9 @@ class HostAgent(BaseAgent):
         image_result = request.get("image_result", {})
         
         combined_message = "Your post with image is ready!\n\n"
-        combined_message += "📝 Post Content:\n"
+        combined_message += "Post Content:\n"
         combined_message += design_result.get("design_result", "")
-        combined_message += "\n\n🖼️ Image Details:\n"
+        combined_message += "\n\nImage Details:\n"
         
         img_data = image_result.get("image_result", {})
         if img_data.get("image_path"):

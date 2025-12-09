@@ -121,6 +121,26 @@ def create_llm_manager() -> LLMManager:
                 
                 manager.register_backend(f"openai_{model.replace('-', '_')}", config)
     
-    logger.info(f"✅ LLM Manager initialized with {len(manager.backends)} backends")
+    # Show what actually initialized
+    initialized = []
+    failed = []
+    
+    for name, config in manager.backends.items():
+        if name in manager.clients:
+            initialized.append(f"{name} ({config.provider.value})")
+        else:
+            failed.append(f"{name} ({config.provider.value})")
+    
+    logger.info(f"LLM Manager initialized:")
+    logger.info(f"   Total registered: {len(manager.backends)}")
+    logger.info(f"   Successfully initialized: {len(initialized)}")
+    if initialized:
+        for backend in initialized:
+            logger.info(f"      {backend}")
+    
+    if failed:
+        logger.warning(f"   Failed to initialize: {len(failed)}")
+        for backend in failed:
+            logger.warning(f"      ✗ {backend}")
     
     return manager

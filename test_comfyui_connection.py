@@ -26,21 +26,21 @@ def test_comfyui():
         print(f"   Status Code: {response.status_code}")
         
         if response.status_code == 200:
-            print("   ✅ SUCCESS - ComfyUI is accessible!")
+            print("   SUCCESS - ComfyUI is accessible!")
             stats = response.json()
             print(f"   System Stats: {stats}")
         else:
-            print(f"   ❌ FAILED - Status: {response.status_code}")
+            print(f"   FAILED - Status: {response.status_code}")
             print(f"   Response: {response.text}")
     
     except requests.exceptions.ConnectionError as e:
-        print(f"   ❌ CONNECTION FAILED")
+        print(f"   CONNECTION FAILED")
         print(f"   Error: {e}")
         print(f"\n   Make sure ComfyUI is running:")
         print(f"   python main.py --listen --port 8188")
     
     except Exception as e:
-        print(f"   ❌ ERROR: {e}")
+        print(f"   ERROR: {e}")
     
     print("="*70 + "\n")
 

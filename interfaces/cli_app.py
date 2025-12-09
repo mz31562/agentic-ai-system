@@ -42,15 +42,15 @@ class CLIApp:
     async def initialize(self):
         """Initialize the agentic system"""
         print("\n" + "="*70)
-        print("🤖 AGENTIC AI SYSTEM - CLI Interface")
+        print("AGENTIC AI SYSTEM - CLI Interface")
         print("="*70 + "\n")
         
-        print("🚀 Starting system...")
+        print("Starting system...")
         
         # START COMFYUI IF NEEDED
         image_backend = os.getenv("IMAGE_BACKEND", "comfyui")
         if image_backend == "comfyui":
-            print("\n📦 Checking ComfyUI status...")
+            print("\nChecking ComfyUI status...")
             
             self.comfyui_manager = ComfyUIManager(
                 comfyui_path=os.getenv("COMFYUI_PATH"),
@@ -60,7 +60,7 @@ class CLIApp:
             )
             
             if not self.comfyui_manager.start(wait_for_ready=True, timeout=60):
-                print("\n⚠️  WARNING: ComfyUI failed to start!")
+                print("\nWarning: ComfyUI failed to start!")
                 print("   Image generation will fall back to mock mode.")
                 print("   You can:")
                 print("   1. Start ComfyUI manually in another terminal")
@@ -72,11 +72,7 @@ class CLIApp:
                     print("Exiting...")
                     return False
         
-        # Create message bus
-        self.message_bus = MessageBus()
-        
-        # CREATE MULTI-LLM MANAGER (NEW!)
-        print("\n🧠 Initializing LLM backends...")
+        print("\nInitializing LLM backends...")
         self.llm_manager = create_llm_manager()
         
         # Show available backends
@@ -85,25 +81,25 @@ class CLIApp:
                              if info["available"]]
         
         if available_backends:
-            print(f"   ✅ Available LLM backends: {len(available_backends)}")
+            print(f"Available LLM backends: {len(available_backends)}")
             for backend_name in available_backends:
                 backend_info = stats["backends"][backend_name]
                 config = backend_info["config"]
                 provider_emoji = {
-                    "ollama": "🏠",
-                    "groq": "⚡",
-                    "claude": "🧠",
-                    "openai": "🤖"
+                    "ollama": "local",
+                    "groq": "cloud",
+                    "claude": "cloud",
+                    "openai": "cloud"
                 }.get(config['provider'], "📡")
                 
                 print(f"     {provider_emoji} {backend_name}")
                 print(f"        Model: {config['model']}")
                 if config['is_local']:
-                    print(f"        Status: Local & Free ✅")
+                    print(f"        Status: Local & Free")
                 else:
                     print(f"        Cost: ${config['cost_per_1k_tokens']:.4f}/1K tokens")
         else:
-            print("   ⚠️  No LLM backends available!")
+            print("No LLM backends available!")
             print("   System will run in MOCK mode")
             print("   Enable backends in .env file")
         
@@ -120,7 +116,7 @@ class CLIApp:
         self.host_agent = HostAgent(self.message_bus)
         self.post_design_agent = PostDesignAgent(
             self.message_bus,
-            self.llm_manager  # Pass the multi-LLM manager!
+            self.llm_manager
         )
         self.image_generation_agent = ImageGenerationAgent(
             self.message_bus,
@@ -141,7 +137,7 @@ class CLIApp:
         await self.image_generation_agent.start()
         await self.math_server.start()
         
-        print("\n✅ System ready!")
+        print("\nSystem ready!")
         if available_backends:
             print(f"   LLM Backends: {len(available_backends)} active")
         print(f"   Image Backend: {image_config['backend']}")
@@ -187,7 +183,7 @@ class CLIApp:
         await self.message_bus.publish(message)
         
         # Wait for response
-        print("\n⏳ Processing...\n")
+        print("\nProcessing...\n")
         
         # Wait up to 5 minutes for response
         for i in range(600):  # 600 * 0.5 = 300 seconds
@@ -204,30 +200,30 @@ class CLIApp:
             while self.response_queue:
                 response = self.response_queue.pop(0)
                 print("="*70)
-                print("🤖 AGENT RESPONSE:")
+                print("AGENT RESPONSE:")
                 print("="*70)
                 print(response)
                 print("="*70 + "\n")
         else:
-            print("⚠️ No response received (timeout)\n")
+            print("No response received (timeout)\n")
     
     
     async def show_status(self):
         """Show system status"""
         print("\n" + "="*70)
-        print("📊 SYSTEM STATUS")
+        print("SYSTEM STATUS")
         print("="*70 + "\n")
         
         # ComfyUI Status
         if self.comfyui_manager:
             status = self.comfyui_manager.get_status()
-            print(f"🖼️  ComfyUI Server:")
+            print(f"ComfyUI Server:")
             print(f"   Running: {status['running']}")
             print(f"   URL: {status['url']}\n")
         
-        # LLM Manager Stats (NEW!)
+        # LLM Manager Stats
         if self.llm_manager:
-            print(f"🧠 LLM Manager:")
+            print(f"LLM Manager:")
             stats = self.llm_manager.get_stats()
             
             available_count = sum(1 for info in stats["backends"].values() if info["available"])
@@ -240,16 +236,16 @@ class CLIApp:
                     usage = backend_info.get("stats", {})
                     
                     provider_emoji = {
-                        "ollama": "🏠",
-                        "groq": "⚡",
-                        "claude": "🧠",
-                        "openai": "🤖"
+                        "ollama": "local",
+                        "groq": "cloud",
+                        "claude": "cloud",
+                        "openai": "cloud"
                     }.get(config['provider'], "📡")
                     
-                    print(f"\n   {provider_emoji} {backend_name}:")
+                    print(f"\n   {backend_name}:")
                     print(f"      Provider: {config['provider']}")
                     print(f"      Model: {config['model']}")
-                    print(f"      Status: {'🟢 Active' if not backend_info['circuit_open'] else '🔴 Circuit Open'}")
+                    print(f"      Status: {'Active' if not backend_info['circuit_open'] else 'Circuit Open'}")
                     
                     if usage and usage.get('total_requests', 0) > 0:
                         success_rate = (usage.get('successful_requests', 0) / usage.get('total_requests', 1)) * 100
@@ -265,7 +261,7 @@ class CLIApp:
         # Host Agent
         if self.host_agent:
             host_status = self.host_agent.get_status()
-            print(f"🎯 Host Agent:")
+            print(f"Host Agent:")
             print(f"   Status: {host_status['status']}")
             print(f"   Running: {host_status['is_running']}")
             print(f"   Processed: {host_status['processed_count']} messages\n")
@@ -273,7 +269,7 @@ class CLIApp:
         # PostDesign Agent
         if self.post_design_agent:
             design_status = self.post_design_agent.get_status()
-            print(f"🎨 PostDesign Agent:")
+            print(f"PostDesign Agent:")
             print(f"   Status: {design_status['status']}")
             print(f"   Running: {design_status['is_running']}")
             print(f"   Processed: {design_status['processed_count']} messages\n")
@@ -281,7 +277,7 @@ class CLIApp:
         # Image Generation Agent
         if self.image_generation_agent:
             image_status = self.image_generation_agent.get_status()
-            print(f"🖼️  Image Generation Agent:")
+            print(f"Image Generation Agent:")
             print(f"   Status: {image_status['status']}")
             print(f"   Running: {image_status['is_running']}")
             print(f"   Processed: {image_status['processed_count']} messages\n")
@@ -289,7 +285,7 @@ class CLIApp:
         # Math Server
         if self.math_server:
             math_status = self.math_server.get_status()
-            print(f"🔢 Math MCP Server:")
+            print(f"Math MCP Server:")
             print(f"   Status: {math_status['status']}")
             print(f"   Running: {math_status['is_running']}")
             print(f"   Processed: {math_status['processed_count']} messages\n")
@@ -297,7 +293,7 @@ class CLIApp:
         # Active Requests
         if self.host_agent:
             active = self.host_agent.get_active_requests_summary()
-            print(f"📋 Active Requests: {active['total_active']}\n")
+            print(f"Active Requests: {active['total_active']}\n")
         
         print("="*70 + "\n")
     
@@ -313,7 +309,7 @@ class CLIApp:
             while self.running and not self.shutdown_in_progress:
                 try:
                     # Get user input
-                    user_input = input("💬 You: ").strip()
+                    user_input = input("You: ").strip()
                     
                     if not user_input:
                         continue
@@ -323,7 +319,7 @@ class CLIApp:
                         command = user_input.lower()
                         
                         if command == "/exit":
-                            print("\n👋 Shutting down...\n")
+                            print("\nShutting down...\n")
                             self.running = False
                             break
                         
@@ -338,15 +334,15 @@ class CLIApp:
                             self.print_help()
                         
                         else:
-                            print(f"❌ Unknown command: {user_input}")
-                            print("💡 Type /help for available commands\n")
+                            print(f"Unknown command: {user_input}")
+                            print("Type /help for available commands\n")
                     
                     else:
                         # Regular message
                         await self.send_message(user_input)
                 
                 except KeyboardInterrupt:
-                    print("\n\n👋 Interrupted. Shutting down...\n")
+                    print("\n\nInterrupted. Shutting down...\n")
                     self.running = False
                     break
                 
@@ -357,10 +353,10 @@ class CLIApp:
                     break
                 
                 except Exception as e:
-                    print(f"\n❌ Error: {e}\n")
+                    print(f"\nError: {e}\n")
         
         except KeyboardInterrupt:
-            print("\n\n👋 Keyboard interrupt. Shutting down...\n")
+            print("\n\nKeyboard interrupt. Shutting down...\n")
         
         finally:
             # Cleanup
@@ -373,7 +369,7 @@ class CLIApp:
             return
         
         self.shutdown_in_progress = True
-        print("🛑 Stopping agents...")
+        print("Stopping agents...")
         
         try:
             # Stop all agents with timeout
@@ -396,24 +392,23 @@ class CLIApp:
                         timeout=3.0
                     )
                 except asyncio.TimeoutError:
-                    print("⚠️  Some agents took too long to stop")
+                    print("Some agents took too long to stop")
             
             # Shutdown message bus
             if self.message_bus:
                 try:
                     await asyncio.wait_for(self.message_bus.shutdown(), timeout=2.0)
                 except asyncio.TimeoutError:
-                    print("⚠️  Message bus shutdown timed out")
+                    print("Message bus shutdown timed out")
             
-            # STOP COMFYUI
             if self.comfyui_manager:
-                print("🛑 Stopping ComfyUI server...")
+                print("Stopping ComfyUI server...")
                 self.comfyui_manager.stop()
             
-            print("✅ Shutdown complete!\n")
+            print("Shutdown complete!\n")
             
         except Exception as e:
-            print(f"⚠️  Error during shutdown: {e}\n")
+            print(f"Error during shutdown: {e}\n")
 
 
 def main():
@@ -435,9 +430,9 @@ def main():
     try:
         asyncio.run(app.run())
     except KeyboardInterrupt:
-        print("\n👋 Exiting...\n")
+        print("\nExiting...\n")
     except Exception as e:
-        print(f"\n❌ Unexpected error: {e}\n")
+        print(f"\nUnexpected error: {e}\n")
         import traceback
         traceback.print_exc()
 

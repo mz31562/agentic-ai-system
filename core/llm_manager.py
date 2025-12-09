@@ -94,16 +94,16 @@ class LLMManager:
                 client = self._initialize_client(config)
                 if client:
                     self.clients[name] = client
-                    logger.info(f"✅ Registered LLM backend: {name} ({config.provider.value})")
+                    logger.info(f"Registered LLM backend: {name} ({config.provider.value})")
                     return True
                 else:
-                    logger.warning(f"⚠️  Failed to initialize {name}, but registered")
+                    logger.warning(f"Failed to initialize {name}, but registered")
                     return True
             
             return True
             
         except Exception as e:
-            logger.error(f"❌ Failed to register backend {name}: {e}")
+            logger.error(f"Failed to register backend {name}: {e}")
             return False
     
     
@@ -148,27 +148,19 @@ class LLMManager:
     ) -> Optional[str]:
         """
         Intelligently select the best backend for a task
-        
-        Args:
-            task_type: Type of task (creative, analytical, code, etc.)
-            complexity: Complexity level
-            prefer_local: Prefer local/private backends
-            prefer_fast: Prioritize speed over quality
-            max_cost: Maximum cost per request (USD)
-            required_features: Required features (streaming, functions, vision)
-            
-        Returns:
-            Backend name or None
+        (This method is kept for backwards compatibility but complete() now uses _rank_backends)
         """
         candidates = []
         
         for name, config in self.backends.items():
             # Check if client is available
             if name not in self.clients:
+                logger.debug(f"Skipping {name} - client not initialized")
                 continue
             
             # Check circuit breaker
             if self._is_circuit_open(name):
+                logger.debug(f"Skipping {name} - circuit breaker open")
                 continue
             
             # Apply filters
@@ -261,7 +253,7 @@ class LLMManager:
         **kwargs
     ) -> Dict[str, Any]:
         """
-        Generate completion using selected or automatic backend
+        Generate completion using selected or automatic backend with fallback
         
         Args:
             prompt: Input prompt
@@ -277,26 +269,167 @@ class LLMManager:
                 "content": str,
                 "backend": str,
                 "model": str,
+                "provider": str,
                 "tokens_used": int,
                 "latency_ms": int,
-                "cost": float
+                "cost": float,
+                "metadata": dict
             }
         """
-        # Auto-select backend if not specified
-        if not backend:
-            backend = self.select_backend(
-                task_type=task_type,
-                complexity=complexity,
-                prefer_fast=kwargs.get("prefer_fast", False),
-                prefer_local=kwargs.get("prefer_local", False)
+        # If specific backend requested, try only that one
+        if backend:
+            if backend not in self.clients:
+                available = [name for name in self.backends.keys() if name in self.clients]
+                raise Exception(
+                    f"Backend '{backend}' not available. "
+                    f"Available backends: {available if available else 'None'}"
+                )
+            
+            # Try the specific backend
+            return await self._attempt_completion(
+                backend, prompt, max_tokens, temperature, **kwargs
+            )
+        
+        # Auto-select: get ranked list of all available backends
+        candidates = self._rank_backends(task_type, complexity, kwargs)
+        
+        if not candidates:
+            available_backends = [name for name in self.backends.keys() if name in self.clients]
+            circuit_open = [name for name in available_backends if self._is_circuit_open(name)]
+            
+            if not available_backends:
+                raise Exception(
+                    f"No available backends. "
+                    f"Registered: {list(self.backends.keys())}, "
+                    f"but none have initialized clients. "
+                    f"Check your .env configuration and ensure services are running."
+                )
+            elif circuit_open:
+                raise Exception(
+                    f"No suitable backends available. "
+                    f"Available backends: {available_backends}, "
+                    f"but all have circuit breakers open: {circuit_open}. "
+                    f"Services may be experiencing issues."
+                )
+            else:
+                raise Exception(
+                    f"No backends match criteria. "
+                    f"Available: {available_backends}, "
+                    f"task_type={task_type}, complexity={complexity}"
+                )
+        
+        # Try each candidate backend until one succeeds
+        last_error = None
+        
+        for backend_name, score, config in candidates:
+            try:
+                logger.info(f"Attempting backend: {backend_name} (score: {score:.2f})")
+                
+                result = await self._attempt_completion(
+                    backend_name, prompt, max_tokens, temperature, **kwargs
+                )
+                
+                logger.info(f"Successfully used backend: {backend_name}")
+                return result
+                
+            except Exception as e:
+                logger.warning(f"Backend {backend_name} failed: {e}")
+                last_error = e
+                
+                # Continue to next backend
+                continue
+        
+        # All backends failed
+        tried_backends = [name for name, _, _ in candidates]
+        raise Exception(
+            f"All {len(tried_backends)} backends failed. "
+            f"Tried: {tried_backends}. "
+            f"Last error: {last_error}"
+        )
+    
+    
+    def _rank_backends(
+        self,
+        task_type: str,
+        complexity: TaskComplexity,
+        kwargs: dict
+    ) -> List[tuple]:
+        """
+        Rank all available backends by suitability score
+        
+        Returns:
+            List of (backend_name, score, config) tuples, sorted by score (highest first)
+        """
+        candidates = []
+        
+        prefer_local = kwargs.get("prefer_local", False)
+        prefer_fast = kwargs.get("prefer_fast", False)
+        max_cost = kwargs.get("max_cost", None)
+        required_features = kwargs.get("required_features", None)
+        
+        for name, config in self.backends.items():
+            # Check if client is available
+            if name not in self.clients:
+                logger.debug(f"Skipping {name} - client not initialized")
+                continue
+            
+            # Check circuit breaker
+            if self._is_circuit_open(name):
+                logger.debug(f"Skipping {name} - circuit breaker open")
+                continue
+            
+            # Apply filters
+            if prefer_local and not config.is_local:
+                continue
+            
+            if max_cost and config.cost_per_1k_tokens > max_cost:
+                continue
+            
+            if required_features:
+                if "streaming" in required_features and not config.supports_streaming:
+                    continue
+                if "functions" in required_features and not config.supports_functions:
+                    continue
+                if "vision" in required_features and not config.supports_vision:
+                    continue
+            
+            # Calculate score
+            score = self._calculate_backend_score(
+                config, task_type, complexity, prefer_fast
             )
             
-            if not backend:
-                raise Exception("No available backends")
+            candidates.append((name, score, config))
         
-        if backend not in self.clients:
-            raise Exception(f"Backend {backend} not available")
+        # Sort by score (highest first)
+        candidates.sort(key=lambda x: x[1], reverse=True)
         
+        return candidates
+    
+    
+    async def _attempt_completion(
+        self,
+        backend: str,
+        prompt: str,
+        max_tokens: int,
+        temperature: float,
+        **kwargs
+    ) -> Dict[str, Any]:
+        """
+        Attempt completion with a specific backend
+        
+        Args:
+            backend: Backend name to use
+            prompt: Input prompt
+            max_tokens: Maximum tokens to generate
+            temperature: Sampling temperature
+            **kwargs: Additional arguments
+            
+        Returns:
+            Completion result dictionary
+            
+        Raises:
+            Exception if the backend fails
+        """
         config = self.backends[backend]
         client = self.clients[backend]
         
@@ -348,9 +481,11 @@ class LLMManager:
             }
         
         except Exception as e:
+            # Record failure
             self._record_failure(backend)
-            logger.error(f"Error calling {backend}: {e}")
-            raise
+            
+            # Re-raise to allow fallback to next backend
+            raise Exception(f"Backend {backend} failed: {e}") from e
     
     
     async def _call_ollama(

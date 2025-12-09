@@ -10,7 +10,6 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-# Add project root to path
 project_root = str(Path(__file__).parent.parent)
 sys.path.insert(0, project_root)
 
@@ -25,12 +24,11 @@ load_dotenv()
 # Page configuration
 st.set_page_config(
     page_title="Agentic AI System",
-    page_icon="🤖",
+    page_icon="robot",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS
 st.markdown("""
 <style>
     .main-header {
@@ -83,7 +81,7 @@ class StreamlitUI:
             st.session_state.message_bus = None
             st.session_state.host_agent = None
             st.session_state.post_design_agent = None
-            st.session_state.math_server = None  # Now active
+            st.session_state.math_server = None
             st.session_state.messages = []
             st.session_state.user_response_queue = []
     
@@ -91,11 +89,9 @@ class StreamlitUI:
     async def initialize_system(self):
         """Initialize the agentic system"""
         if not st.session_state.system_initialized:
-            with st.spinner("🚀 Starting agentic system..."):
-                # Create message bus
+            with st.spinner("Starting agentic system..."):
                 st.session_state.message_bus = MessageBus()
                 
-                # Create agents
                 st.session_state.host_agent = HostAgent(st.session_state.message_bus)
                 
                 # Configure LLM backend for PostDesignAgent
@@ -174,7 +170,7 @@ class StreamlitUI:
         if len(st.session_state.messages) > 0 and st.session_state.messages[-1]["type"] == "user":
             st.session_state.messages.append({
                 "type": "agent",
-                "content": "⚠️ Processing... (Response pending)",
+                "content": "Processing... (Response pending)",
                 "metadata": {},
                 "timestamp": datetime.now().strftime("%H:%M:%S")
             })
@@ -183,17 +179,17 @@ class StreamlitUI:
     def render_sidebar(self):
         """Render the sidebar with system status"""
         with st.sidebar:
-            st.markdown("### 🎛️ System Control")
+            st.markdown("### System Control")
             
-            if st.button("🔄 Refresh Status", use_container_width=True):
+            if st.button("Refresh Status", use_container_width=True):
                 st.rerun()
             
-            if st.button("🗑️ Clear Chat", use_container_width=True):
+            if st.button("Clear Chat", use_container_width=True):
                 st.session_state.messages = []
                 st.rerun()
             
             st.markdown("---")
-            st.markdown("### 📊 System Status")
+            st.markdown("### System Status")
             
             if st.session_state.system_initialized:
                 # LLM Backend Info
@@ -201,7 +197,7 @@ class StreamlitUI:
                 model = os.getenv("LLM_MODEL", "llama3")
                 st.markdown(f"""
                 <div class="agent-status status-active">
-                    <strong>🧠 LLM Backend</strong><br>
+                    <strong>LLM Backend</strong><br>
                     Backend: {backend}<br>
                     Model: {model}
                 </div>
@@ -212,7 +208,7 @@ class StreamlitUI:
                 status_class = "status-active" if host_status['is_running'] else "status-inactive"
                 st.markdown(f"""
                 <div class="agent-status {status_class}">
-                    <strong>🎯 Host Agent</strong><br>
+                    <strong>Host Agent</strong><br>
                     Status: {host_status['status']}<br>
                     Processed: {host_status['processed_count']} msgs
                 </div>
@@ -223,7 +219,7 @@ class StreamlitUI:
                 status_class = "status-active" if design_status['is_running'] else "status-inactive"
                 st.markdown(f"""
                 <div class="agent-status {status_class}">
-                    <strong>🎨 PostDesign Agent</strong><br>
+                    <strong>PostDesign Agent</strong><br>
                     Status: {design_status['status']}<br>
                     Processed: {design_status['processed_count']} msgs
                 </div>
@@ -234,7 +230,7 @@ class StreamlitUI:
                 status_class = "status-active" if math_status['is_running'] else "status-inactive"
                 st.markdown(f"""
                 <div class="agent-status {status_class}">
-                    <strong>🔢 Math MCP Server</strong><br>
+                    <strong>Math MCP Server</strong><br>
                     Status: {math_status['status']}<br>
                     Processed: {math_status['processed_count']} msgs
                 </div>
@@ -242,7 +238,7 @@ class StreamlitUI:
                 
                 # Active Requests
                 st.markdown("---")
-                st.markdown("### 📋 Active Requests")
+                st.markdown("### Active Requests")
                 active_requests = st.session_state.host_agent.get_active_requests_summary()
                 st.metric("Total Active", active_requests['total_active'])
             
@@ -250,7 +246,7 @@ class StreamlitUI:
                 st.info("System not initialized")
             
             st.markdown("---")
-            st.markdown("### ℹ️ About")
+            st.markdown("### About")
             st.markdown("""
             **Agentic AI System**
             
@@ -265,7 +261,7 @@ class StreamlitUI:
     
     def render_chat(self):
         """Render the chat interface"""
-        st.markdown('<div class="main-header">🤖 Agentic AI System</div>', unsafe_allow_html=True)
+        st.markdown('<div class="main-header">Agentic AI System</div>', unsafe_allow_html=True)
         
         # Chat container
         chat_container = st.container()
@@ -276,14 +272,14 @@ class StreamlitUI:
                 if msg['type'] == 'user':
                     st.markdown(f"""
                     <div class="message-user">
-                        <strong>👤 You</strong> <small>({msg['timestamp']})</small><br>
+                        <strong>You</strong> <small>({msg['timestamp']})</small><br>
                         {msg['content']}
                     </div>
                     """, unsafe_allow_html=True)
                 else:
                     st.markdown(f"""
                     <div class="message-agent">
-                        <strong>🤖 Agent</strong> <small>({msg['timestamp']})</small><br>
+                        <strong>Agent</strong> <small>({msg['timestamp']})</small><br>
                         {msg['content']}
                     </div>
                     """, unsafe_allow_html=True)
@@ -302,11 +298,9 @@ class StreamlitUI:
             )
         
         with col2:
-            send_button = st.button("Send 📤", use_container_width=True)
+            send_button = st.button("Send", use_container_width=True)
         
-        # Handle send
         if send_button and user_input:
-            # Use asyncio.run for proper async execution
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
             loop.run_until_complete(self.send_message(user_input))
@@ -316,7 +310,7 @@ class StreamlitUI:
     
     def render_examples(self):
         """Render example prompts"""
-        st.markdown("### 💡 Try these examples:")
+        st.markdown("### Try these examples:")
         
         examples = [
             "Create a post about fibonacci sequence",
@@ -329,7 +323,6 @@ class StreamlitUI:
         for idx, example in enumerate(examples):
             with cols[idx % 2]:
                 if st.button(example, use_container_width=True, key=f"example_{idx}"):
-                    # Use asyncio.run for proper async execution
                     loop = asyncio.new_event_loop()
                     asyncio.set_event_loop(loop)
                     loop.run_until_complete(self.send_message(example))

@@ -85,10 +85,10 @@ class ComfyUIManager:
         """
         # Check if already running
         if self.is_running():
-            logger.info("✅ ComfyUI is already running")
+            logger.info("ComfyUI is already running")
             return True
         
-        logger.info("🚀 Starting ComfyUI server...")
+        logger.info("Starting ComfyUI server...")
         
         try:
             # Build command based on OS
@@ -129,30 +129,30 @@ class ComfyUIManager:
                 start_time = time.time()
                 while time.time() - start_time < timeout:
                     if self.is_running():
-                        logger.info("✅ ComfyUI server is ready!")
+                        logger.info("ComfyUI server is ready!")
                         return True
                     
                     # Check if process died
                     if self.process.poll() is not None:
                         stderr = self.process.stderr.read() if self.process.stderr else ""
-                        logger.error(f"❌ ComfyUI process died during startup")
+                        logger.error(f"ComfyUI process died during startup")
                         logger.error(f"   Error output: {stderr}")
                         return False
                     
                     time.sleep(1)
                 
-                logger.error(f"❌ ComfyUI server failed to start within {timeout}s")
+                logger.error(f"ComfyUI server failed to start within {timeout}s")
                 return False
             
             return True
             
         except FileNotFoundError:
-            logger.error("❌ Conda not found. Is Anaconda/Miniconda installed?")
+            logger.error("Conda not found. Is Anaconda/Miniconda installed?")
             logger.error("   Make sure 'conda' is in your PATH")
             return False
         
         except Exception as e:
-            logger.error(f"❌ Failed to start ComfyUI: {e}", exc_info=True)
+            logger.error(f"Failed to start ComfyUI: {e}", exc_info=True)
             return False
     
     
@@ -180,13 +180,13 @@ class ComfyUIManager:
             # Wait for process to end
             try:
                 self.process.wait(timeout=timeout)
-                logger.info("✅ ComfyUI stopped gracefully")
+                logger.info("ComfyUI stopped gracefully")
             except subprocess.TimeoutExpired:
                 # Force kill if still running
-                logger.warning("⚠️  Forcing ComfyUI to stop...")
+                logger.warning("Forcing ComfyUI to stop...")
                 self.process.kill()
                 self.process.wait()
-                logger.info("✅ ComfyUI stopped (forced)")
+                logger.info("ComfyUI stopped (forced)")
         
         except Exception as e:
             logger.error(f"Error stopping ComfyUI: {e}")
