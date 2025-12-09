@@ -4,6 +4,7 @@ import logging
 from typing import Dict, Any, Optional, List, Callable
 from enum import Enum
 from dataclasses import dataclass
+from datetime import datetime, date
 import time
 import os
 
@@ -59,7 +60,7 @@ class LLMConfig:
 
 class LLMManager:
     """
-    Manages multiple LLM backends and intelligently routes requests
+    Manages multiple LLM backends and intelligently routes requests with budget tracking
     """
     
     def __init__(self):
@@ -69,6 +70,12 @@ class LLMManager:
         
         # Circuit breaker state
         self.circuit_breakers: Dict[str, Dict[str, Any]] = {}
+        
+        # Budget tracking (NEW)
+        self.daily_spend: float = 0.0
+        self.last_reset_date: date = datetime.now().date()
+        self.request_count: int = 0
+        self.budget_warnings_sent: int = 0
     
     
     def register_backend(
@@ -138,6 +145,50 @@ class LLMManager:
             return None
     
     
+    def _reset_daily_budget_if_needed(self):
+        """Reset daily spend counter if it's a new day"""
+        today = datetime.now().date()
+        if today > self.last_reset_date:
+            logger.info(f"New day detected. Previous day spend: ${self.daily_spend:.4f}")
+            self.daily_spend = 0.0
+            self.last_reset_date = today
+            self.budget_warnings_sent = 0
+    
+    
+    def _check_budget(self, estimated_cost: float, config: LLMConfig) -> tuple[bool, Optional[str]]:
+        """
+        Check if request is within budget limits
+        
+        Returns:
+            (is_within_budget, warning_message)
+        """
+        self._reset_daily_budget_if_needed()
+        
+        # Free models always pass
+        if estimated_cost == 0:
+            return True, None
+        
+        # Check per-request budget
+        per_request_budget = float(os.getenv("LLM_MAX_COST_PER_REQUEST", "0.05"))
+        if estimated_cost > per_request_budget:
+            return False, f"Estimated cost ${estimated_cost:.4f} exceeds per-request limit ${per_request_budget:.2f}"
+        
+        # Check daily budget
+        daily_budget = float(os.getenv("LLM_DAILY_BUDGET", "5.00"))
+        if self.daily_spend + estimated_cost > daily_budget:
+            return False, f"Daily budget exceeded: ${self.daily_spend:.2f} + ${estimated_cost:.4f} > ${daily_budget:.2f}"
+        
+        # Check if approaching budget (80% threshold)
+        warn_threshold = float(os.getenv("LLM_WARN_AT_PERCENT", "80")) / 100
+        if (self.daily_spend + estimated_cost) / daily_budget >= warn_threshold and self.budget_warnings_sent == 0:
+            self.budget_warnings_sent += 1
+            warning = f"⚠️ Budget warning: ${self.daily_spend + estimated_cost:.2f}/{daily_budget:.2f} ({((self.daily_spend + estimated_cost) / daily_budget * 100):.1f}%)"
+            logger.warning(warning)
+            return True, warning
+        
+        return True, None
+    
+    
     def select_backend(
         self,
         task_type: str = "general",
@@ -204,66 +255,138 @@ class LLMManager:
         config: LLMConfig,
         task_type: str,
         complexity: TaskComplexity,
-        prefer_fast: bool
+        prefer_fast: bool,
+        task_metadata: Optional[Dict[str, Any]] = None
     ) -> float:
-        """Calculate UNBIASED score for backend selection"""
+        """
+        Calculate intelligent score for backend selection with task metadata awareness
+        
+        Args:
+            config: Backend configuration
+            task_type: Type of task (creative, reasoning, code, analytical)
+            complexity: Task complexity level
+            prefer_fast: Whether to prefer fast backends
+            task_metadata: Additional task context (high_stakes, needs_speed, etc.)
+        """
+        task_metadata = task_metadata or {}
         score = 0.0
         
-        # 1. Base quality score (most important)
+        # 1. Base quality score (HIGHER WEIGHT for better quality)
+        quality_weight = 5.0  # Increased from 3.0
+        
         if task_type == "creative":
-            score += config.creative_quality * 3  # Increased weight
+            base_quality = config.creative_quality * quality_weight
         elif task_type == "code":
-            score += config.code_quality * 3
-        elif task_type == "reasoning" or task_type == "analytical":
-            score += config.reasoning_quality * 3
+            base_quality = config.code_quality * quality_weight
+        elif task_type in ["reasoning", "analytical"]:
+            base_quality = config.reasoning_quality * quality_weight
         else:
-            score += (config.reasoning_quality + config.creative_quality) / 2 * 3
+            avg_quality = (config.reasoning_quality + config.creative_quality) / 2
+            base_quality = avg_quality * quality_weight
         
-        # 2. Complexity matching
+        score += base_quality
+        
+        # 2. High-stakes bonus for premium models (NEW)
+        if task_metadata.get("is_high_stakes", False):
+            if config.reasoning_quality >= 9:  # Premium models (GPT-4, Claude)
+                score += 20
+                logger.debug(f"High-stakes bonus (+20) for {config.model}")
+            elif config.reasoning_quality >= 7:  # Good models
+                score += 8
+            else:  # Lower quality models
+                score -= 10  # Penalty for using weak models on important tasks
+        
+        # 3. Speed consideration with context
+        needs_speed = task_metadata.get("needs_speed", False)
+        prefer_fast_env = os.getenv("LLM_PREFER_FAST", "true").lower() == "true"
+        
+        if needs_speed or prefer_fast or prefer_fast_env:
+            if config.avg_latency_ms < 1000:  # Ultra-fast (Groq)
+                score += 15
+            elif config.avg_latency_ms < 3000:  # Fast
+                score += 8
+            elif config.avg_latency_ms > 8000:  # Slow
+                score -= 10
+        
+        # 4. Complexity matching (NEW - better logic)
         if complexity == TaskComplexity.SIMPLE:
-            score += config.speed_score * 0.5
-        elif complexity == TaskComplexity.EXPERT:
-            score += config.reasoning_quality * 1.5
-        
-        # 3. Speed consideration (ALWAYS apply if backend is fast)
-        # Read from .env
-        prefer_fast = prefer_fast or os.getenv("LLM_PREFER_FAST", "true").lower() == "true"
-        
-        if prefer_fast:
-            # Reward fast backends
-            if config.avg_latency_ms < 1000:  # Under 1 second
-                score += 10
-            elif config.avg_latency_ms < 3000:  # Under 3 seconds
-                score += 5
-            # Penalize slow backends
-            elif config.avg_latency_ms > 8000:  # Over 8 seconds
-                score -= 5
-        
-        # 4. Cost consideration (FAIR penalty)
-        if config.cost_per_1k_tokens == 0:
-            score += 8  # Bonus for free
-        else:
-            # Fair cost penalty (not too harsh)
-            max_cost = float(os.getenv("LLM_MAX_COST_PER_REQUEST", "0.01"))
-            if config.cost_per_1k_tokens <= max_cost:
-                score -= config.cost_per_1k_tokens * 100  # Reasonable penalty
+            # Simple tasks don't need premium models - reward efficient choices
+            if config.reasoning_quality >= 9:
+                score -= 8  # Penalty for overkill (save budget)
+            elif config.reasoning_quality >= 7:
+                score += 5  # Good balance
             else:
-                score -= 50  # Too expensive, big penalty
+                score += 10  # Reward cheap models for simple tasks
         
-        # 5. Local preference (ONLY if explicitly enabled)
+        elif complexity == TaskComplexity.MEDIUM:
+            # Medium tasks benefit from good models
+            if config.reasoning_quality >= 7:
+                score += 8
+        
+        elif complexity == TaskComplexity.COMPLEX:
+            # Complex tasks need good models
+            if config.reasoning_quality >= 8:
+                score += 15
+            elif config.reasoning_quality < 6:
+                score -= 15  # Penalty for weak models
+        
+        elif complexity == TaskComplexity.EXPERT:
+            # Expert tasks MUST use premium models
+            if config.reasoning_quality >= 9:
+                score += 25
+            elif config.reasoning_quality >= 7:
+                score += 5
+            else:
+                score -= 25  # Strong penalty for inadequate models
+        
+        # 5. Cost consideration (FAIRER than before)
+        if config.cost_per_1k_tokens == 0:
+            score += 10  # Good bonus for free
+        else:
+            # Scale cost penalty based on task importance
+            cost_multiplier = 100
+            
+            # Reduce penalty for high-stakes tasks (quality matters more)
+            if task_metadata.get("is_high_stakes", False):
+                cost_multiplier = 50  # Less harsh penalty
+            
+            # Check if within budget
+            max_cost = float(os.getenv("LLM_MAX_COST_PER_REQUEST", "0.05"))
+            
+            if config.cost_per_1k_tokens <= max_cost:
+                # Within budget - reasonable penalty
+                score -= config.cost_per_1k_tokens * cost_multiplier
+            else:
+                # Over budget - but don't make it impossible for important tasks
+                if task_metadata.get("is_high_stakes", False):
+                    score -= 40  # Moderate penalty for high-stakes
+                else:
+                    score -= 60  # Higher penalty for regular tasks
+        
+        # 6. Word count consideration (NEW)
+        word_estimate = task_metadata.get("word_count_estimate", 0)
+        if word_estimate > 400:
+            # Long content - prefer models with better sustained quality
+            if config.reasoning_quality >= 8:
+                score += 10
+        
+        # 7. Local preference (ONLY if explicitly enabled)
         prefer_local = os.getenv("LLM_PREFER_LOCAL", "false").lower() == "true"
         if prefer_local and config.is_local:
-            score += 10  # Only bonus if user wants local
+            score += 12  # Bonus for local
         elif not prefer_local and not config.is_local:
-            score += 2  # Small bonus for cloud (more reliable)
+            score += 3  # Small bonus for cloud (more reliable)
         
-        # 6. Priority from .env (OVERRIDE scores)
+        # 8. Priority from .env (OVERRIDE mechanism)
         priority_list = os.getenv("LLM_BACKEND_PRIORITY", "").split(",")
-        if priority_list and config.provider.value in priority_list:
-            priority_index = priority_list.index(config.provider.value)
-            # First in list gets +20, second +10, third +5, etc.
-            priority_bonus = max(0, 20 - (priority_index * 10))
-            score += priority_bonus
+        if priority_list[0]:  # Check if not empty
+            for idx, provider in enumerate(priority_list):
+                if config.provider.value == provider.strip():
+                    # First in list gets +20, second +10, third +5
+                    priority_bonus = max(0, 20 - (idx * 10))
+                    score += priority_bonus
+                    logger.debug(f"Priority bonus (+{priority_bonus}) for {config.provider.value}")
+                    break
         
         return score
     
@@ -279,7 +402,7 @@ class LLMManager:
         **kwargs
     ) -> Dict[str, Any]:
         """
-        Generate completion using selected or automatic backend with fallback
+        Generate completion using selected or automatic backend with fallback and budget tracking
         
         Args:
             prompt: Input prompt
@@ -288,7 +411,7 @@ class LLMManager:
             complexity: Complexity level
             max_tokens: Maximum tokens to generate
             temperature: Sampling temperature
-            **kwargs: Additional provider-specific arguments
+            **kwargs: Additional provider-specific arguments including task_metadata
             
         Returns:
             {
@@ -302,6 +425,9 @@ class LLMManager:
                 "metadata": dict
             }
         """
+        # Increment request counter
+        self.request_count += 1
+        
         # If specific backend requested, try only that one
         if backend:
             if backend not in self.clients:
@@ -310,6 +436,17 @@ class LLMManager:
                     f"Backend '{backend}' not available. "
                     f"Available backends: {available if available else 'None'}"
                 )
+            
+            # Check budget before attempting
+            config = self.backends[backend]
+            estimated_cost = (max_tokens / 1000) * config.cost_per_1k_tokens
+            within_budget, warning = self._check_budget(estimated_cost, config)
+            
+            if not within_budget:
+                raise Exception(f"Budget limit: {warning}")
+            
+            if warning:
+                logger.warning(warning)
             
             # Try the specific backend
             return await self._attempt_completion(
@@ -344,18 +481,29 @@ class LLMManager:
                     f"task_type={task_type}, complexity={complexity}"
                 )
         
-        # Try each candidate backend until one succeeds
+        # Try each candidate backend until one succeeds (with budget checking)
         last_error = None
         
         for backend_name, score, config in candidates:
             try:
-                logger.info(f"Attempting backend: {backend_name} (score: {score:.2f})")
+                # Check budget before attempting
+                estimated_cost = (max_tokens / 1000) * config.cost_per_1k_tokens
+                within_budget, warning = self._check_budget(estimated_cost, config)
+                
+                if not within_budget:
+                    logger.warning(f"Skipping {backend_name}: {warning}")
+                    continue  # Try next backend
+                
+                if warning:
+                    logger.warning(warning)
+                
+                logger.info(f"Attempting backend: {backend_name} (score: {score:.2f}, est. cost: ${estimated_cost:.4f})")
                 
                 result = await self._attempt_completion(
                     backend_name, prompt, max_tokens, temperature, **kwargs
                 )
                 
-                logger.info(f"Successfully used backend: {backend_name}")
+                logger.info(f"✓ Successfully used backend: {backend_name} (cost: ${result['cost']:.4f})")
                 return result
                 
             except Exception as e:
@@ -392,6 +540,7 @@ class LLMManager:
         prefer_fast = kwargs.get("prefer_fast", False)
         max_cost = kwargs.get("max_cost", None)
         required_features = kwargs.get("required_features", None)
+        task_metadata = kwargs.get("task_metadata", {})  # NEW
         
         for name, config in self.backends.items():
             # Check if client is available
@@ -419,15 +568,23 @@ class LLMManager:
                 if "vision" in required_features and not config.supports_vision:
                     continue
             
-            # Calculate score
+            # Calculate score WITH task metadata
             score = self._calculate_backend_score(
-                config, task_type, complexity, prefer_fast
+                config, task_type, complexity, prefer_fast, task_metadata
             )
             
             candidates.append((name, score, config))
         
         # Sort by score (highest first)
         candidates.sort(key=lambda x: x[1], reverse=True)
+        
+        # Log top 3 candidates
+        if candidates:
+            logger.info(f"Top backend candidates:")
+            for idx, (name, score, config) in enumerate(candidates[:3], 1):
+                logger.info(f"   {idx}. {name}: score={score:.1f}, "
+                          f"quality={config.reasoning_quality}, "
+                          f"cost=${config.cost_per_1k_tokens:.4f}/1K")
         
         return candidates
     
@@ -492,8 +649,9 @@ class LLMManager:
             tokens_used = result.get("tokens_used", 0)
             cost = (tokens_used / 1000) * config.cost_per_1k_tokens
             
-            # Record success
+            # Record success and update daily spend
             self._record_success(backend, latency_ms, tokens_used, cost)
+            self.daily_spend += cost
             
             return {
                 "content": result["content"],
@@ -668,6 +826,24 @@ class LLMManager:
             logger.warning(f"🔴 Circuit breaker OPENED for {backend} (3 consecutive failures)")
     
     
+    def get_budget_status(self) -> Dict[str, Any]:
+        """Get current budget status (NEW)"""
+        self._reset_daily_budget_if_needed()
+        
+        daily_budget = float(os.getenv("LLM_DAILY_BUDGET", "5.00"))
+        per_request_budget = float(os.getenv("LLM_MAX_COST_PER_REQUEST", "0.05"))
+        
+        return {
+            "daily_spend": self.daily_spend,
+            "daily_budget": daily_budget,
+            "daily_remaining": daily_budget - self.daily_spend,
+            "daily_percent_used": (self.daily_spend / daily_budget * 100) if daily_budget > 0 else 0,
+            "per_request_limit": per_request_budget,
+            "total_requests_today": self.request_count,
+            "last_reset_date": self.last_reset_date.isoformat()
+        }
+    
+    
     def get_stats(self) -> Dict[str, Any]:
         """Get usage statistics for all backends"""
         return {
@@ -677,12 +853,16 @@ class LLMManager:
                         "provider": config.provider.value,
                         "model": config.model,
                         "is_local": config.is_local,
-                        "cost_per_1k_tokens": config.cost_per_1k_tokens
+                        "cost_per_1k_tokens": config.cost_per_1k_tokens,
+                        "reasoning_quality": config.reasoning_quality,
+                        "creative_quality": config.creative_quality,
+                        "avg_latency_ms": config.avg_latency_ms
                     },
                     "available": name in self.clients,
                     "circuit_open": self._is_circuit_open(name),
                     "stats": self.usage_stats.get(name, {})
                 }
                 for name, config in self.backends.items()
-            }
+            },
+            "budget": self.get_budget_status()
         }
