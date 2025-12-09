@@ -8,6 +8,7 @@ import logging
 from datetime import datetime
 from pathlib import Path
 import time
+import re
 
 from core.agent_base import BaseAgent
 from core.message_bus import MessageBus, Message
@@ -17,12 +18,15 @@ logger = logging.getLogger(__name__)
 
 class ImageGenerationAgent(BaseAgent):
     """
-    Enhanced Image Generation Agent with ComfyUI stability fixes
+    Enhanced Image Generation Agent with ComfyUI stability fixes + Text-in-Image Optimization
     - Connection pooling and session management
     - Health checks before submission
     - Queue monitoring
     - Automatic cleanup after each generation
     - Session reinitialization on connection errors
+    - Smart text detection and prompt enhancement
+    - Text-optimized generation settings
+    - Sampler validation and fallback
     """
     
     def __init__(self, message_bus: MessageBus, image_config: Optional[Dict[str, Any]] = None):
@@ -39,7 +43,8 @@ class ImageGenerationAgent(BaseAgent):
                 "auto_retry",
                 "fallback_support",
                 "prompt_enhancement",
-                "comfyui_stability"
+                "comfyui_stability",
+                "text_in_image_optimization"
             ]
         )
         
@@ -54,10 +59,14 @@ class ImageGenerationAgent(BaseAgent):
             "default_style": os.getenv("DEFAULT_IMAGE_STYLE", "vivid"),
             
             # Robustness settings
-            "max_retries": int(os.getenv("IMAGE_MAX_RETRIES", "3")),  # Increased to 3
-            "timeout_seconds": int(os.getenv("IMAGE_TIMEOUT_SECONDS", "600")),  # Increased to 5 min
+            "max_retries": int(os.getenv("IMAGE_MAX_RETRIES", "3")),
+            "timeout_seconds": int(os.getenv("IMAGE_TIMEOUT_SECONDS", "600")),
             "enable_fallback": os.getenv("IMAGE_ENABLE_FALLBACK", "true").lower() == "true",
-            "check_interval_seconds": 2
+            "check_interval_seconds": 2,
+            
+            # Text-in-image settings
+            "enable_text_optimization": os.getenv("ENABLE_TEXT_OPTIMIZATION", "true").lower() == "true",
+            "text_detection_keywords": ["text that says", "text:", "words:", "letters:", "sign that says"]
         }
         
         if image_config:
@@ -78,6 +87,9 @@ class ImageGenerationAgent(BaseAgent):
         self.generation_count = 0
         self.last_successful_generation = None
         
+        # ComfyUI available samplers cache
+        self.available_samplers = None
+        self.available_schedulers = None
         
         # Initialize the appropriate client
         self.client = None
@@ -117,7 +129,7 @@ class ImageGenerationAgent(BaseAgent):
             self.client = None
     
     def _init_comfyui(self):
-        """Initialize ComfyUI client"""
+        """Initialize ComfyUI client and fetch available samplers"""
         try:
             import requests
             
@@ -137,12 +149,112 @@ class ImageGenerationAgent(BaseAgent):
             if response.status_code == 200:
                 logger.info(f"ComfyUI initialized at {comfyui_url}")
                 self.consecutive_failures = 0
+                
+                # Fetch available samplers and schedulers
+                self._fetch_available_samplers()
             else:
                 raise Exception(f"ComfyUI returned status {response.status_code}")
                 
         except Exception as e:
             logger.error(f"ComfyUI initialization failed: {e}")
             raise
+    
+    
+    def _fetch_available_samplers(self):
+        """Fetch list of available samplers from ComfyUI (NEW)"""
+        try:
+            import requests
+            
+            # Get object info which contains sampler names
+            response = requests.get(
+                f"{self.client['url']}/object_info",
+                timeout=5
+            )
+            
+            if response.status_code == 200:
+                object_info = response.json()
+                
+                # Extract samplers from KSampler node
+                if "KSampler" in object_info:
+                    sampler_info = object_info["KSampler"]["input"]["required"]
+                    
+                    if "sampler_name" in sampler_info:
+                        self.available_samplers = sampler_info["sampler_name"][0]
+                        logger.info(f"Available samplers: {', '.join(self.available_samplers[:5])}...")
+                    
+                    if "scheduler" in sampler_info:
+                        self.available_schedulers = sampler_info["scheduler"][0]
+                        logger.info(f"Available schedulers: {', '.join(self.available_schedulers[:5])}...")
+                else:
+                    logger.warning("Could not fetch sampler info from ComfyUI")
+                    
+        except Exception as e:
+            logger.warning(f"Failed to fetch available samplers: {e}")
+    
+    
+    def _get_safe_sampler(self, preferred: str, is_text: bool = False) -> str:
+        """
+        Get a safe sampler name that exists in ComfyUI
+        
+        Args:
+            preferred: Preferred sampler name
+            is_text: Whether this is for text generation
+            
+        Returns:
+            Safe sampler name
+        """
+        # If we don't have the list, use safe defaults
+        if not self.available_samplers:
+            # Most common samplers that should exist
+            safe_defaults = ["euler", "dpmpp_2m", "dpmpp_sde", "ddim"]
+            logger.info(f"Using safe default sampler: {safe_defaults[0]}")
+            return safe_defaults[0]
+        
+        # Check if preferred sampler exists
+        if preferred in self.available_samplers:
+            return preferred
+        
+        # Text-optimized fallback order
+        if is_text:
+            text_samplers = ["euler", "dpmpp_2m", "dpmpp_sde", "ddim", "dpmpp_2m_sde"]
+        else:
+            text_samplers = ["dpmpp_2m", "euler", "dpmpp_sde", "ddim"]
+        
+        # Find first available
+        for sampler in text_samplers:
+            if sampler in self.available_samplers:
+                logger.info(f"Sampler '{preferred}' not available, using '{sampler}'")
+                return sampler
+        
+        # Last resort - use first available
+        fallback = self.available_samplers[0]
+        logger.warning(f"Using fallback sampler: {fallback}")
+        return fallback
+    
+    
+    def _get_safe_scheduler(self, preferred: str) -> str:
+        """Get a safe scheduler name that exists in ComfyUI"""
+        if not self.available_schedulers:
+            # Most common schedulers
+            safe_defaults = ["normal", "karras", "simple"]
+            logger.info(f"Using safe default scheduler: {safe_defaults[0]}")
+            return safe_defaults[0]
+        
+        if preferred in self.available_schedulers:
+            return preferred
+        
+        # Fallback order
+        fallback_order = ["normal", "karras", "simple", "exponential"]
+        
+        for scheduler in fallback_order:
+            if scheduler in self.available_schedulers:
+                logger.info(f"Scheduler '{preferred}' not available, using '{scheduler}'")
+                return scheduler
+        
+        # Last resort
+        fallback = self.available_schedulers[0]
+        logger.warning(f"Using fallback scheduler: {fallback}")
+        return fallback
     
     
     def _init_dalle(self):
@@ -191,19 +303,113 @@ class ImageGenerationAgent(BaseAgent):
             raise
     
     
-    def _enhance_prompt_for_quality(self, user_prompt: str, content_type: str = "social_media") -> tuple:
+    def _detect_text_request(self, prompt: str) -> tuple:
         """
-        Enhance user prompt with quality modifiers and style keywords
+        Detect if prompt contains text generation request and extract the text
+        
+        Returns:
+            (has_text: bool, extracted_text: str or None)
+        """
+        if not self.image_config["enable_text_optimization"]:
+            return False, None
+        
+        prompt_lower = prompt.lower()
+        
+        # Check for text keywords
+        for keyword in self.image_config["text_detection_keywords"]:
+            if keyword in prompt_lower:
+                # Extract text in quotes
+                quote_patterns = [
+                    r'["\']([^"\']+)["\']',  # Single or double quotes
+                    r'says\s+([A-Z0-9\s]+?)(?:,|\.|$)',  # After "says"
+                    r'text:\s*([A-Z0-9\s]+?)(?:,|\.|$)',  # After "text:"
+                ]
+                
+                for pattern in quote_patterns:
+                    match = re.search(pattern, prompt, re.IGNORECASE)
+                    if match:
+                        text_content = match.group(1).strip()
+                        logger.info(f"✓ Text detected: '{text_content}'")
+                        return True, text_content
+                
+                # If keyword found but no quotes, still mark as text request
+                logger.info(f"✓ Text request detected (no quotes)")
+                return True, None
+        
+        return False, None
+    
+    
+    def _enhance_prompt_for_text(self, user_prompt: str, text_content: str = None) -> tuple:
+        """
+        Enhanced prompting specifically for text-in-image generation
         
         Args:
             user_prompt: Original user prompt
-            content_type: Type of content (marketing, product, social_media, etc.)
+            text_content: The exact text that should appear (if extracted)
             
         Returns:
             Tuple of (enhanced_prompt, negative_prompt)
         """
         
-        # Quality boosters
+        # Text-specific quality keywords
+        text_quality_keywords = [
+            "clear legible text",
+            "sharp typography",
+            "readable font",
+            "professional text",
+            "crisp letters",
+            "well-defined text"
+        ]
+        
+        # Negative prompt for text
+        text_negative_prompt = [
+            "blurry text",
+            "illegible text",
+            "distorted letters",
+            "misspelled words",
+            "garbled text",
+            "random characters",
+            "duplicated text",
+            "multiple text versions",
+            "ugly",
+            "low quality",
+            "deformed"
+        ]
+        
+        # Build enhanced prompt
+        enhanced = user_prompt.strip()
+        
+        # Add text quality modifiers
+        enhanced += ", " + ", ".join(text_quality_keywords[:4])
+        
+        # Add general quality
+        enhanced += ", masterpiece, best quality, highly detailed, 8k uhd"
+        
+        logger.info(f"Original prompt: {user_prompt}")
+        logger.info(f"Text-enhanced prompt: {enhanced}")
+        
+        return enhanced, ", ".join(text_negative_prompt)
+    
+    
+    def _enhance_prompt_for_quality(self, user_prompt: str, content_type: str = "social_media", has_text: bool = False) -> tuple:
+        """
+        Enhance user prompt with quality modifiers and style keywords
+        Now with text detection support
+        
+        Args:
+            user_prompt: Original user prompt
+            content_type: Type of content (marketing, product, social_media, etc.)
+            has_text: Whether this is a text-in-image request
+            
+        Returns:
+            Tuple of (enhanced_prompt, negative_prompt)
+        """
+        
+        # If text request, use text-specific enhancement
+        if has_text:
+            return self._enhance_prompt_for_text(user_prompt)
+        
+        # Otherwise, use regular enhancement
         quality_keywords = [
             "masterpiece",
             "best quality", 
@@ -213,7 +419,6 @@ class ImageGenerationAgent(BaseAgent):
             "sharp focus"
         ]
         
-        # Style presets based on use case
         style_presets = {
             "marketing": [
                 "commercial photography style",
@@ -237,21 +442,17 @@ class ImageGenerationAgent(BaseAgent):
             ]
         }
         
-        # Negative prompt
         negative_prompt = [
             "ugly",
             "blurry",
             "low quality",
             "distorted",
             "deformed",
-            "watermark",
-            "text"
+            "watermark"
         ]
         
-        # Get style for this content type
         style_keywords = style_presets.get(content_type, style_presets["social_media"])
         
-        # Build enhanced prompt
         enhanced = user_prompt.strip()
         enhanced += ", " + ", ".join(style_keywords[:2])
         enhanced += ", " + ", ".join(quality_keywords[:4])
@@ -272,6 +473,7 @@ class ImageGenerationAgent(BaseAgent):
         
         logger.info(f"Image Generation Agent subscribed to topic: image_request")
         logger.info(f"Backend: {self.backend} | Model: {self.model}")
+        logger.info(f"Text optimization: {self.image_config['enable_text_optimization']}")
         logger.info(f"Max retries: {self.image_config['max_retries']} | Timeout: {self.image_config['timeout_seconds']}s")
     
     
@@ -317,11 +519,9 @@ class ImageGenerationAgent(BaseAgent):
             try:
                 if attempt > 0:
                     logger.info(f"Retry attempt {attempt}/{max_retries}...")
-                    # Progressive backoff: 2s, 4s, 8s (max 10s)
                     wait_time = min(2 ** attempt, 10)
                     await asyncio.sleep(wait_time)
                 
-                # Generate image with cleanup (NEW)
                 result = await self._generate_image_internal(prompt, style, size, content_type)
                 
                 # Success! Reset failure counter
@@ -453,7 +653,7 @@ class ImageGenerationAgent(BaseAgent):
     
     
     async def _call_comfyui(self, prompt: str, size: str, content_type: str = "social_media") -> Dict[str, Any]:
-        """Call ComfyUI API with enhanced prompts"""
+        """Call ComfyUI API with enhanced prompts and text detection"""
         import requests
         
         logger.info(f"ComfyUI generation started for: '{prompt[:50]}...'")
@@ -461,13 +661,31 @@ class ImageGenerationAgent(BaseAgent):
         # Parse size
         width, height = map(int, size.split('x'))
         
-        # Enhance the prompt
-        enhanced_prompt, negative_prompt = self._enhance_prompt_for_quality(prompt, content_type)
+        # Detect if this is a text request
+        has_text, text_content = self._detect_text_request(prompt)
         
-        # Build workflow
-        workflow = self._build_comfyui_workflow(enhanced_prompt, width, height, negative_prompt)
+        if has_text:
+            logger.info(f"🔤 Text-in-image mode activated")
+            if text_content:
+                logger.info(f"   Target text: '{text_content}'")
         
-        # Submit prompt using session (NEW: using session instead of direct requests)
+        # Enhance the prompt (now with text awareness)
+        enhanced_prompt, negative_prompt = self._enhance_prompt_for_quality(
+            prompt, 
+            content_type,
+            has_text=has_text
+        )
+        
+        # Build workflow (now with text-optimized settings)
+        workflow = self._build_comfyui_workflow(
+            enhanced_prompt, 
+            width, 
+            height, 
+            negative_prompt,
+            has_text=has_text
+        )
+        
+        # Submit prompt
         url = f"{self.client['url']}/prompt"
         logger.info(f"Submitting to: {url}")
         
@@ -510,6 +728,8 @@ class ImageGenerationAgent(BaseAgent):
                 "size": size,
                 "backend": "comfyui_local",
                 "model": self.model,
+                "has_text": has_text,
+                "text_content": text_content,
                 "settings": {
                     "steps": workflow["3"]["inputs"]["steps"],
                     "cfg": workflow["3"]["inputs"]["cfg"],
@@ -524,31 +744,66 @@ class ImageGenerationAgent(BaseAgent):
             raise Exception(f"ComfyUI result retrieval failed: {e}")
     
     
-    def _build_comfyui_workflow(self, prompt: str, width: int, height: int, negative_prompt: str = None) -> Dict:
-        """Build ComfyUI workflow with optimized settings"""
+    def _build_comfyui_workflow(
+        self, 
+        prompt: str, 
+        width: int, 
+        height: int, 
+        negative_prompt: str = None,
+        has_text: bool = False
+    ) -> Dict:
+        """
+        Build ComfyUI workflow with optimized settings
+        Now with text-specific optimizations and sampler validation
+        """
         
         # Determine checkpoint and settings
         if "sdxl" in self.model.lower():
             checkpoint = "sd_xl_base_1.0.safetensors"
-            steps = 25  # Reduced from 30 for faster/more stable generation
-            cfg = 7.0   # Slightly lower for stability
-            sampler = "dpmpp_2m"
-            scheduler = "karras"
+            
+            if has_text:
+                # Text-optimized settings for SDXL
+                steps = 30      # More steps for text clarity
+                cfg = 8.5       # Higher CFG for better prompt adherence
+                sampler_preferred = "euler"  # CHANGED: safer default
+                scheduler_preferred = "normal"
+                logger.info("   Using TEXT-OPTIMIZED settings for SDXL")
+            else:
+                # Regular settings
+                steps = 25
+                cfg = 7.0
+                sampler_preferred = "dpmpp_2m"
+                scheduler_preferred = "karras"
         else:
             checkpoint = "v1-5-pruned-emaonly.safetensors"
-            steps = 20
-            cfg = 7.0
-            sampler = "dpmpp_2m"
-            scheduler = "karras"
+            
+            if has_text:
+                steps = 25
+                cfg = 8.0
+                sampler_preferred = "euler"
+                scheduler_preferred = "normal"
+                logger.info("   Using TEXT-OPTIMIZED settings for SD1.5")
+            else:
+                steps = 20
+                cfg = 7.0
+                sampler_preferred = "dpmpp_2m"
+                scheduler_preferred = "karras"
+        
+        # Get safe sampler and scheduler
+        sampler = self._get_safe_sampler(sampler_preferred, is_text=has_text)
+        scheduler = self._get_safe_scheduler(scheduler_preferred)
         
         if not negative_prompt:
-            negative_prompt = "ugly, blurry, low quality, distorted, deformed, watermark, text"
+            if has_text:
+                negative_prompt = "blurry text, illegible text, distorted letters, ugly, blurry, low quality"
+            else:
+                negative_prompt = "ugly, blurry, low quality, distorted, deformed, watermark, text"
         
         workflow = {
             "3": {
                 "class_type": "KSampler",
                 "inputs": {
-                    "seed": int(time.time() * 1000) % 2147483647,  # Keep seed in int32 range
+                    "seed": int(time.time() * 1000) % 2147483647,
                     "steps": steps,
                     "cfg": cfg,
                     "sampler_name": sampler,
