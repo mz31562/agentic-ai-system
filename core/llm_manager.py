@@ -5,6 +5,7 @@ from typing import Dict, Any, Optional, List, Callable
 from enum import Enum
 from dataclasses import dataclass
 import time
+import os
 
 logger = logging.getLogger(__name__)
 
@@ -205,39 +206,64 @@ class LLMManager:
         complexity: TaskComplexity,
         prefer_fast: bool
     ) -> float:
-        """Calculate a score for backend selection"""
+        """Calculate UNBIASED score for backend selection"""
         score = 0.0
         
-        # Base quality score
+        # 1. Base quality score (most important)
         if task_type == "creative":
-            score += config.creative_quality * 2
+            score += config.creative_quality * 3  # Increased weight
         elif task_type == "code":
-            score += config.code_quality * 2
-        elif task_type == "reasoning":
-            score += config.reasoning_quality * 2
+            score += config.code_quality * 3
+        elif task_type == "reasoning" or task_type == "analytical":
+            score += config.reasoning_quality * 3
         else:
-            score += (config.reasoning_quality + config.creative_quality) / 2
+            score += (config.reasoning_quality + config.creative_quality) / 2 * 3
         
-        # Complexity matching
+        # 2. Complexity matching
         if complexity == TaskComplexity.SIMPLE:
-            score += config.speed_score
+            score += config.speed_score * 0.5
         elif complexity == TaskComplexity.EXPERT:
             score += config.reasoning_quality * 1.5
         
-        # Speed preference
+        # 3. Speed consideration (ALWAYS apply if backend is fast)
+        # Read from .env
+        prefer_fast = prefer_fast or os.getenv("LLM_PREFER_FAST", "true").lower() == "true"
+        
         if prefer_fast:
-            score += config.speed_score * 2
-            score -= config.avg_latency_ms / 1000  # Penalize high latency
+            # Reward fast backends
+            if config.avg_latency_ms < 1000:  # Under 1 second
+                score += 10
+            elif config.avg_latency_ms < 3000:  # Under 3 seconds
+                score += 5
+            # Penalize slow backends
+            elif config.avg_latency_ms > 8000:  # Over 8 seconds
+                score -= 5
         
-        # Cost efficiency (favor free/cheap)
+        # 4. Cost consideration (FAIR penalty)
         if config.cost_per_1k_tokens == 0:
-            score += 10  # Big bonus for free
+            score += 8  # Bonus for free
         else:
-            score -= config.cost_per_1k_tokens * 10  # Penalize expensive
+            # Fair cost penalty (not too harsh)
+            max_cost = float(os.getenv("LLM_MAX_COST_PER_REQUEST", "0.01"))
+            if config.cost_per_1k_tokens <= max_cost:
+                score -= config.cost_per_1k_tokens * 100  # Reasonable penalty
+            else:
+                score -= 50  # Too expensive, big penalty
         
-        # Local availability bonus
-        if config.is_local:
-            score += 5
+        # 5. Local preference (ONLY if explicitly enabled)
+        prefer_local = os.getenv("LLM_PREFER_LOCAL", "false").lower() == "true"
+        if prefer_local and config.is_local:
+            score += 10  # Only bonus if user wants local
+        elif not prefer_local and not config.is_local:
+            score += 2  # Small bonus for cloud (more reliable)
+        
+        # 6. Priority from .env (OVERRIDE scores)
+        priority_list = os.getenv("LLM_BACKEND_PRIORITY", "").split(",")
+        if priority_list and config.provider.value in priority_list:
+            priority_index = priority_list.index(config.provider.value)
+            # First in list gets +20, second +10, third +5, etc.
+            priority_bonus = max(0, 20 - (priority_index * 10))
+            score += priority_bonus
         
         return score
     
