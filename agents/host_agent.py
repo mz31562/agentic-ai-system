@@ -73,21 +73,6 @@ class HostAgent(BaseAgent):
                 r"design.*post.*visual",
                 r"post.*with.*image",
                 r"post.*with.*picture",
-            ],
-            "math": [
-                r"calculate",
-                r"solve",
-                r"fibonacci",
-                r"equation",
-                r"math",
-                r"factorial",
-                r"prime",
-            ],
-            "status": [
-                r"status",
-                r"available agents",
-                r"what can you do",
-                r"help",
             ]
         }
     
@@ -124,24 +109,21 @@ class HostAgent(BaseAgent):
         
         logger.info(f"Host Agent subscribed to topics: user_request, design_response, image_response, error")
     
-    
+
     async def handle_message(self, message: Message):
         """Route incoming messages to appropriate handlers"""
+        handlers = {
+            "user_request": self.handle_user_request,
+            "design_response": self.handle_design_response,
+            "image_response": self.handle_image_response,
+            "error": self.handle_error,
+        }
         
-        if message.topic == "user_request":
-            await self.handle_user_request(message)
-        
-        elif message.topic == "design_response":
-            await self.handle_design_response(message)
-        
-        elif message.topic == "image_response":
-            await self.handle_image_response(message)
-        
-        elif message.topic == "error":
-            await self.handle_error(message)
-        
+        handler = handlers.get(message.topic)
+        if handler:
+            await handler(message)
         else:
-            logger.warning(f"Host Agent received unknown topic: {message.topic}")
+            logger.warning(f"Unknown topic: {message.topic}")
     
     
     async def handle_user_request(self, message: Message):
@@ -175,13 +157,6 @@ class HostAgent(BaseAgent):
         elif request_type == "image":
             await self._route_to_image_agent(message, user_message, request_id)
         
-        elif request_type == "status":
-            await self._handle_status_request(message)
-        
-        elif request_type == "math":
-            # Math is handled by PostDesign Agent
-            await self._route_to_design_agent(message, user_message, request_id)
-        
         else:
             await self._handle_unknown_request(message, user_message)
     
@@ -190,14 +165,22 @@ class HostAgent(BaseAgent):
         """Analyze user message to determine request type."""
         message_lower = user_message.lower()
         
-        for request_type, patterns in self.request_patterns.items():
-            for pattern in patterns:
+        # Check design_with_image first (most specific)
+        for pattern in self.request_patterns.get("design_with_image", []):
+            if re.search(pattern, message_lower):
+                logger.info(f"Request classified as: design_with_image")
+                return "design_with_image"
+        
+        # Then check others
+        for request_type in ["design", "image"]:
+            for pattern in self.request_patterns.get(request_type, []):
                 if re.search(pattern, message_lower):
                     logger.info(f"Request classified as: {request_type}")
                     return request_type
         
-        logger.info("Request type: unknown")
-        return "unknown"
+        # Default to design for marketing queries
+        logger.info("Request type: design (default)")
+        return "design"
     
     
     async def _route_to_design_agent(
@@ -315,30 +298,14 @@ class HostAgent(BaseAgent):
             topic="user_response"
         )
     
-    
     async def _handle_unknown_request(self, message: Message, user_message: str):
         """Handle requests that couldn't be classified"""
         
-        logger.info("Handling unknown request type")
+        logger.info("Defaulting to design agent for unclear request")
         
-        response_text = (
-            f"I'm not sure how to help with: '{user_message}'\n\n"
-            "I can help you with:\n"
-            "- Creating posts and designs\n"
-            "- Generating images and graphics\n"
-            "- Math calculations and visualizations\n"
-            "- Checking system status\n\n"
-            "Try rephrasing your request!"
-        )
-        
-        await self.send_response(
-            original_message=message,
-            payload={
-                "response_type": "error",
-                "message": response_text
-            },
-            topic="user_response"
-        )
+        # Default to design agent for marketing-related queries
+        request_id = message.correlation_id or message.id
+        await self._route_to_design_agent(message, user_message, request_id)
     
     
     async def handle_design_response(self, message: Message):

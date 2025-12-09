@@ -30,18 +30,12 @@ class PostDesignAgent(BaseAgent):
                 "social_media_posts",
                 "email_campaigns",
                 "design_creation",
-                "math_integration",
                 "creative_writing",
                 "multi_llm_support"
             ]
         )
         
         self.llm_manager = llm_manager
-        
-        self.math_keywords = [
-            "fibonacci", "sequence", "calculate", "equation", "solve",
-            "formula", "series", "pattern", "number", "math"
-        ]
         
         self.content_types = {
             "linkedin": ["linkedin", "professional post", "career"],
@@ -97,18 +91,11 @@ class PostDesignAgent(BaseAgent):
         try:
             content_type = self._detect_content_type(user_message)
             tone = self._detect_tone(user_message)
-            needs_math = self._detect_math_requirement(user_message)
             
-            logger.info(f"Content analysis: type={content_type}, tone={tone}, needs_math={needs_math}")
-            
-            math_data = None
-            if needs_math:
-                logger.info("Math requirement detected, querying Math MCP Server...")
-                math_data = await self._query_math_server(user_message, message.correlation_id)
+            logger.info(f"Content analysis: type={content_type}, tone={tone}")
             
             design_result = await self._generate_design(
                 user_message, 
-                math_data,
                 content_type=content_type,
                 tone=tone
             )
@@ -118,7 +105,6 @@ class PostDesignAgent(BaseAgent):
                 payload={
                     "design_result": design_result["content"],
                     "metadata": design_result["metadata"],
-                    "math_data": math_data,
                     "request_id": request_id,
                     "status": "completed"
                 },
@@ -163,56 +149,9 @@ class PostDesignAgent(BaseAgent):
         return "professional"
     
     
-    def _detect_math_requirement(self, user_message: str) -> bool:
-        """Detect if the request requires mathematical calculations"""
-        message_lower = user_message.lower()
-        
-        for keyword in self.math_keywords:
-            if keyword in message_lower:
-                logger.info(f"Math keyword detected: '{keyword}'")
-                return True
-        
-        return False
-    
-    
-    async def _query_math_server(
-        self,
-        user_message: str,
-        correlation_id: Optional[str]
-    ) -> Optional[Dict[str, Any]]:
-        """Query Math MCP Server for calculations"""
-        try:
-            await self.send_request(
-                topic="math_request",
-                recipient="math_mcp_server",
-                payload={
-                    "query": user_message,
-                    "operation": "auto_detect"
-                },
-                correlation_id=correlation_id
-            )
-            
-            await asyncio.sleep(0.5)
-            
-            # Mock math response (replace with actual response handling)
-            if "fibonacci" in user_message.lower():
-                return {
-                    "sequence": [0, 1, 1, 2, 3, 5, 8, 13, 21, 34],
-                    "formula": "F(n) = F(n-1) + F(n-2)",
-                    "explanation": "Each number is the sum of the two preceding ones"
-                }
-            
-            return None
-            
-        except Exception as e:
-            logger.error(f"Error querying Math MCP Server: {e}")
-            return None
-    
-    
     async def _generate_design(
         self,
         user_message: str,
-        math_data: Optional[Dict[str, Any]] = None,
         content_type: str = "social_media",
         tone: str = "professional"
     ) -> Dict[str, Any]:
@@ -220,7 +159,6 @@ class PostDesignAgent(BaseAgent):
         
         prompt = self._build_enhanced_prompt(
             user_message, 
-            math_data, 
             content_type, 
             tone
         )
@@ -254,7 +192,6 @@ class PostDesignAgent(BaseAgent):
                 "content_type": content_type,
                 "tone": tone,
                 "style": "modern",
-                "contains_math": math_data is not None,
                 "word_count": len(content.split())
             }
             
@@ -272,7 +209,7 @@ class PostDesignAgent(BaseAgent):
             logger.error(f"LLM generation failed: {e}", exc_info=True)
             
             # Fallback to mock
-            content = self._generate_mock_design(user_message, math_data, content_type, tone)
+            content = self._generate_mock_design(user_message, content_type, tone)
             metadata = {
                 "backend_used": "mock",
                 "provider": "fallback",
@@ -283,7 +220,6 @@ class PostDesignAgent(BaseAgent):
                 "error": str(e),
                 "content_type": content_type,
                 "tone": tone,
-                "contains_math": math_data is not None
             }
             
             return {
@@ -295,7 +231,6 @@ class PostDesignAgent(BaseAgent):
     def _build_enhanced_prompt(
         self,
         user_message: str,
-        math_data: Optional[Dict[str, Any]],
         content_type: str,
         tone: str
     ) -> str:
@@ -420,14 +355,7 @@ Create emotional connection
 Sound natural and authentic
 
 """
-        
-        if math_data:
-            base_prompt += f"""
-MATHEMATICAL CONTEXT TO INCORPORATE:
-{math_data}
 
-IMPORTANT: Integrate the math naturally into the narrative. Make it accessible and interesting, not dry or academic. Use real-world examples and analogies.
-"""
         
         base_prompt += f"""
 Now create compelling {content_type} content that:
@@ -503,7 +431,6 @@ GENERATE THE CONTENT NOW:"""
     def _generate_mock_design(
         self,
         user_message: str,
-        math_data: Optional[Dict[str, Any]],
         content_type: str,
         tone: str
     ) -> str:
@@ -611,22 +538,5 @@ Point three
         topic = user_message[:50] + ("..." if len(user_message) > 50 else "")
         
         content = template.format(topic=topic)
-        
-        if math_data and "fibonacci" in user_message.lower():
-            content = f"""The Fibonacci Sequence in {topic}! 
-
-Nature's secret code appears everywhere:
-
-The sequence: {', '.join(map(str, math_data.get('sequence', [])))}
-
-Formula: {math_data.get('formula', 'F(n) = F(n-1) + F(n-2)')}
-
-This pattern is universal!
-
-{content}
-
-[Generated in MOCK mode - Enable LLM backends for AI content]
-
-#Mathematics #Nature #Science"""
         
         return content

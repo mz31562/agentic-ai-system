@@ -78,8 +78,6 @@ class ImageGenerationAgent(BaseAgent):
         self.generation_count = 0
         self.last_successful_generation = None
         
-        # Session management for ComfyUI
-        self.session = None
         
         # Initialize the appropriate client
         self.client = None
@@ -118,50 +116,29 @@ class ImageGenerationAgent(BaseAgent):
             self.backend = "mock"
             self.client = None
     
-    
     def _init_comfyui(self):
-        """Initialize ComfyUI with proper session management"""
+        """Initialize ComfyUI client"""
         try:
             import requests
             
             comfyui_url = self.image_config["comfyui_url"]
             
-            # Create session with connection pooling (NEW)
-            self.session = requests.Session()
-            
-            # Configure adapter for stability (NEW)
-            adapter = requests.adapters.HTTPAdapter(
-                pool_connections=1,
-                pool_maxsize=1,
-                max_retries=0,  # We handle retries manually
-                pool_block=False
-            )
-            self.session.mount('http://', adapter)
-            self.session.mount('https://', adapter)
-            
             self.client = {
                 "url": comfyui_url,
-                "requests": requests,
-                "session": self.session  # NEW: Store session reference
+                "requests": requests
             }
             
-            # Test connection with timeout
-            logger.info(f"Testing ComfyUI connection at {comfyui_url}...")
-            try:
-                response = self.session.get(
-                    f"{comfyui_url}/system_stats", 
-                    timeout=5
-                )
-                
-                if response.status_code == 200:
-                    logger.info(f"ComfyUI initialized at {comfyui_url}")
-                    self.consecutive_failures = 0
-                else:
-                    raise Exception(f"ComfyUI returned status {response.status_code}")
-                    
-            except requests.exceptions.ConnectionError as e:
-                logger.error(f"Cannot connect to ComfyUI at {comfyui_url}")
-                raise Exception(f"ComfyUI connection failed: {e}")
+            # Test connection
+            response = requests.get(
+                f"{comfyui_url}/system_stats", 
+                timeout=5
+            )
+            
+            if response.status_code == 200:
+                logger.info(f"ComfyUI initialized at {comfyui_url}")
+                self.consecutive_failures = 0
+            else:
+                raise Exception(f"ComfyUI returned status {response.status_code}")
                 
         except Exception as e:
             logger.error(f"ComfyUI initialization failed: {e}")
@@ -333,13 +310,6 @@ class ImageGenerationAgent(BaseAgent):
                 )
                 return
         
-        # Health check before attempting (NEW)
-        if self.backend == "comfyui" and self.consecutive_failures >= 1:
-            logger.info("Running health check before generation...")
-            if not await self._check_comfyui_health():
-                logger.warning("Health check failed, attempting recovery...")
-                await self._reinitialize_session()
-        
         # Try generation with retries
         max_retries = self.image_config["max_retries"]
         
@@ -350,15 +320,9 @@ class ImageGenerationAgent(BaseAgent):
                     # Progressive backoff: 2s, 4s, 8s (max 10s)
                     wait_time = min(2 ** attempt, 10)
                     await asyncio.sleep(wait_time)
-                    
-                    # Health check before retry (NEW)
-                    if self.backend == "comfyui":
-                        if not await self._check_comfyui_health():
-                            logger.error("Health check failed before retry")
-                            continue
                 
                 # Generate image with cleanup (NEW)
-                result = await self._generate_with_cleanup(prompt, style, size, content_type)
+                result = await self._generate_image_internal(prompt, style, size, content_type)
                 
                 # Success! Reset failure counter
                 self.consecutive_failures = 0
@@ -395,11 +359,6 @@ class ImageGenerationAgent(BaseAgent):
                 logger.error(f"Attempt {attempt + 1} failed: {e}")
                 self.consecutive_failures += 1
                 
-                # If connection error, try to reconnect (NEW)
-                if self.backend == "comfyui" and "connection" in str(e).lower():
-                    logger.warning("Connection issue detected, reinitializing...")
-                    await self._reinitialize_session()
-                
                 if attempt < max_retries:
                     continue
                 else:
@@ -416,121 +375,6 @@ class ImageGenerationAgent(BaseAgent):
                             details={"request_id": request_id, "prompt": prompt, "attempts": max_retries + 1}
                         )
                     return
-    
-    
-    async def _generate_with_cleanup(
-        self,
-        prompt: str,
-        style: str,
-        size: str,
-        content_type: str
-    ) -> Dict[str, Any]:
-        """Generate image with proper cleanup (NEW)"""
-        
-        try:
-            # Check queue if ComfyUI (NEW)
-            if self.backend == "comfyui":
-                queue_info = await self._get_queue_info()
-                if queue_info and queue_info.get('queue_pending', 0) > 5:
-                    logger.warning(f"ComfyUI queue has {queue_info['queue_pending']} pending items")
-                    raise Exception("ComfyUI queue overloaded")
-            
-            # Generate
-            result = await self._generate_image(prompt, style, size, content_type)
-            
-            # Force cleanup (NEW)
-            if self.backend == "comfyui":
-                await self._cleanup_comfyui()
-            
-            return result
-            
-        except Exception as e:
-            # Cleanup on error too (NEW)
-            if self.backend == "comfyui":
-                await self._cleanup_comfyui()
-            raise
-    
-    
-    async def _check_comfyui_health(self) -> bool:
-        """Check if ComfyUI is responsive (NEW)"""
-        try:
-            response = await asyncio.to_thread(
-                self.session.get,
-                f"{self.client['url']}/system_stats",
-                timeout=5
-            )
-            
-            if response.status_code == 200:
-                stats = response.json()
-                system = stats.get('system', {})
-                vram_used = system.get('vram', {}).get('used_percent', 0)
-                
-                if vram_used > 95:
-                    logger.warning(f"VRAM almost full: {vram_used}%")
-                    return False
-                
-                logger.info(f"ComfyUI health check passed (VRAM: {vram_used}%)")
-                return True
-            else:
-                logger.warning(f"Health check failed: {response.status_code}")
-                return False
-                
-        except Exception as e:
-            logger.warning(f"Health check failed: {e}")
-            return False
-    
-    
-    async def _get_queue_info(self) -> Optional[Dict]:
-        """Get ComfyUI queue status (NEW)"""
-        try:
-            response = await asyncio.to_thread(
-                self.session.get,
-                f"{self.client['url']}/queue",
-                timeout=5
-            )
-            
-            if response.status_code == 200:
-                queue_data = response.json()
-                return {
-                    'queue_running': len(queue_data.get('queue_running', [])),
-                    'queue_pending': len(queue_data.get('queue_pending', []))
-                }
-        except Exception as e:
-            logger.debug(f"Queue check failed: {e}")
-        
-        return None
-    
-    
-    async def _cleanup_comfyui(self):
-        """Force cleanup of ComfyUI resources (NEW)"""
-        try:
-            response = await asyncio.to_thread(
-                self.session.post,
-                f"{self.client['url']}/interrupt",
-                timeout=3
-            )
-            await asyncio.sleep(0.5)
-            logger.debug("ComfyUI cleanup completed")
-        except Exception as e:
-            logger.debug(f"Cleanup attempt: {e}")
-    
-    
-    async def _reinitialize_session(self):
-        """Reinitialize the session (NEW)"""
-        logger.info("Reinitializing ComfyUI session...")
-        
-        try:
-            if self.session:
-                self.session.close()
-            
-            await asyncio.sleep(2)
-            
-            self._initialize_backend()
-            
-            logger.info("Session reinitialized")
-            
-        except Exception as e:
-            logger.error(f"Reinitialization failed: {e}")
     
     
     def _record_failure(self):
@@ -629,7 +473,7 @@ class ImageGenerationAgent(BaseAgent):
         
         try:
             response = await asyncio.to_thread(
-                self.session.post,  # Changed from requests.post
+                self.client["requests"].post,
                 url,
                 json={"prompt": workflow},
                 timeout=10
@@ -789,7 +633,7 @@ class ImageGenerationAgent(BaseAgent):
             
             try:
                 response = await asyncio.to_thread(
-                    self.session.get,  # Changed from requests.get
+                    self.client["requests"].get,
                     url,
                     timeout=5
                 )
@@ -852,7 +696,7 @@ class ImageGenerationAgent(BaseAgent):
         for attempt in range(3):
             try:
                 img_response = await asyncio.to_thread(
-                    self.session.get,  # Changed from requests.get
+                    self.client["requests"].get,
                     download_url,
                     params=params,
                     timeout=30
@@ -1022,17 +866,7 @@ class ImageGenerationAgent(BaseAgent):
         logger.info(f"Image saved to: {image_path}")
         return image_path
     
-    
     async def stop(self):
-        """Cleanup on shutdown (NEW)"""
+        """Cleanup on shutdown"""
         logger.info("Stopping Image Generation Agent...")
-        
-        # Final cleanup
-        if self.backend == "comfyui":
-            await self._cleanup_comfyui()
-        
-        # Close session
-        if self.session:
-            self.session.close()
-        
         await super().stop()

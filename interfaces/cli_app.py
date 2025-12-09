@@ -16,8 +16,6 @@ from core.message_bus import MessageBus, Message
 from agents.host_agent import HostAgent
 from agents.post_design_agent import PostDesignAgent
 from agents.image_generation_agent import ImageGenerationAgent
-from mcp_server.math_server import MathMCPServer
-from utils.comfyui_manager import ComfyUIManager
 from core.llm_factory import create_llm_manager
 
 load_dotenv()
@@ -31,9 +29,7 @@ class CLIApp:
         self.host_agent: Optional[HostAgent] = None
         self.post_design_agent: Optional[PostDesignAgent] = None
         self.image_generation_agent: Optional[ImageGenerationAgent] = None
-        self.math_server: Optional[MathMCPServer] = None
-        self.comfyui_manager: Optional[ComfyUIManager] = None
-        self.llm_manager = None  # NEW: Multi-LLM Manager
+        self.llm_manager = None
         self.response_queue = []
         self.running = True
         self.shutdown_in_progress = False
@@ -47,30 +43,24 @@ class CLIApp:
         
         print("Starting system...")
         
-        # START COMFYUI IF NEEDED
+        # 🔧 FIX: Create message bus FIRST
+        self.message_bus = MessageBus()
+        
         image_backend = os.getenv("IMAGE_BACKEND", "comfyui")
         if image_backend == "comfyui":
-            print("\nChecking ComfyUI status...")
-            
-            self.comfyui_manager = ComfyUIManager(
-                comfyui_path=os.getenv("COMFYUI_PATH"),
-                conda_env=os.getenv("COMFYUI_CONDA_ENV", "comfyui"),
-                host=os.getenv("COMFYUI_HOST", "127.0.0.1"),
-                port=int(os.getenv("COMFYUI_PORT", "8188"))
-            )
-            
-            if not self.comfyui_manager.start(wait_for_ready=True, timeout=60):
-                print("\nWarning: ComfyUI failed to start!")
-                print("   Image generation will fall back to mock mode.")
-                print("   You can:")
-                print("   1. Start ComfyUI manually in another terminal")
-                print("   2. Check that conda environment 'comfyui' exists")
-                print("   3. Set IMAGE_BACKEND=mock in .env to skip ComfyUI\n")
-                
-                response = input("Continue anyway? [y/N]: ").strip().lower()
-                if response != 'y':
-                    print("Exiting...")
-                    return False
+            print("\nChecking ComfyUI availability...")
+            comfyui_url = os.getenv("COMFYUI_URL", "http://127.0.0.1:8188")
+            try:
+                import requests
+                response = requests.get(f"{comfyui_url}/system_stats", timeout=3)
+                if response.status_code == 200:
+                    print(f"   ComfyUI detected at {comfyui_url}")
+                else:
+                    print(f"   Warning: ComfyUI not responding at {comfyui_url}")
+                    print(f"   Start ComfyUI manually or use IMAGE_BACKEND=dalle in .env")
+            except:
+                print(f"   Warning: Cannot connect to ComfyUI at {comfyui_url}")
+                print(f"   Start ComfyUI manually or use IMAGE_BACKEND=dalle in .env")
         
         print("\nInitializing LLM backends...")
         self.llm_manager = create_llm_manager()
@@ -122,7 +112,6 @@ class CLIApp:
             self.message_bus,
             image_config=image_config
         )
-        self.math_server = MathMCPServer(self.message_bus)
         
         # Subscribe to user responses
         self.message_bus.subscribe(
@@ -135,7 +124,6 @@ class CLIApp:
         await self.host_agent.start()
         await self.post_design_agent.start()
         await self.image_generation_agent.start()
-        await self.math_server.start()
         
         print("\nSystem ready!")
         if available_backends:
@@ -214,13 +202,6 @@ class CLIApp:
         print("SYSTEM STATUS")
         print("="*70 + "\n")
         
-        # ComfyUI Status
-        if self.comfyui_manager:
-            status = self.comfyui_manager.get_status()
-            print(f"ComfyUI Server:")
-            print(f"   Running: {status['running']}")
-            print(f"   URL: {status['url']}\n")
-        
         # LLM Manager Stats
         if self.llm_manager:
             print(f"LLM Manager:")
@@ -281,14 +262,7 @@ class CLIApp:
             print(f"   Status: {image_status['status']}")
             print(f"   Running: {image_status['is_running']}")
             print(f"   Processed: {image_status['processed_count']} messages\n")
-        
-        # Math Server
-        if self.math_server:
-            math_status = self.math_server.get_status()
-            print(f"Math MCP Server:")
-            print(f"   Status: {math_status['status']}")
-            print(f"   Running: {math_status['is_running']}")
-            print(f"   Processed: {math_status['processed_count']} messages\n")
+    
         
         # Active Requests
         if self.host_agent:
@@ -381,8 +355,6 @@ class CLIApp:
                 shutdown_tasks.append(self.post_design_agent.stop())
             if self.image_generation_agent:
                 shutdown_tasks.append(self.image_generation_agent.stop())
-            if self.math_server:
-                shutdown_tasks.append(self.math_server.stop())
             
             # Wait for all agents to stop with timeout
             if shutdown_tasks:
@@ -401,9 +373,6 @@ class CLIApp:
                 except asyncio.TimeoutError:
                     print("Message bus shutdown timed out")
             
-            if self.comfyui_manager:
-                print("Stopping ComfyUI server...")
-                self.comfyui_manager.stop()
             
             print("Shutdown complete!\n")
             
