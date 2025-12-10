@@ -46,8 +46,8 @@ def create_llm_manager() -> LLMManager:
                 provider=LLMProvider.OLLAMA,
                 model=model,
                 base_url=base_url,
-                cost_per_1k_tokens=0.0,  # Free!
-                avg_latency_ms=2500,  # Realistic for local
+                cost_per_1k_tokens=0.0,
+                avg_latency_ms=2500,
                 max_tokens=4096,
                 reasoning_quality=reasoning_quality,
                 creative_quality=creative_quality,
@@ -75,14 +75,14 @@ def create_llm_manager() -> LLMManager:
                     creative_quality = 9
                     code_quality = 9
                     max_tokens = 8192
-                    latency = 800  # Slightly slower for larger models
+                    latency = 800
                     
                 elif "8b" in model_lower:
                     reasoning_quality = 7
                     creative_quality = 7
                     code_quality = 7
                     max_tokens = 8192
-                    latency = 400  # Very fast
+                    latency = 400
                     
                 elif "mixtral" in model_lower:
                     reasoning_quality = 8
@@ -102,13 +102,13 @@ def create_llm_manager() -> LLMManager:
                     provider=LLMProvider.GROQ,
                     model=model,
                     api_key=api_key,
-                    cost_per_1k_tokens=0.0,  # Free tier!
+                    cost_per_1k_tokens=0.0,
                     avg_latency_ms=latency,
                     max_tokens=max_tokens,
                     reasoning_quality=reasoning_quality,
                     creative_quality=creative_quality,
                     code_quality=code_quality,
-                    speed_score=10,  # Groq is always extremely fast
+                    speed_score=10,
                     is_local=False,
                     requires_internet=True,
                     supports_streaming=True
@@ -257,7 +257,7 @@ def create_llm_manager() -> LLMManager:
         if name in manager.clients:
             quality_avg = (config.reasoning_quality + config.creative_quality + config.code_quality) / 3
             cost_label = "FREE" if config.cost_per_1k_tokens == 0 else f"${config.cost_per_1k_tokens:.4f}/1K"
-            speed_label = "⚡ FAST" if config.avg_latency_ms < 1000 else "MODERATE" if config.avg_latency_ms < 2000 else "SLOW"
+            speed_label = "FAST" if config.avg_latency_ms < 1000 else "MODERATE" if config.avg_latency_ms < 2000 else "SLOW"  # CHANGED: Removed ⚡
             
             initialized.append({
                 "name": name,
@@ -271,14 +271,14 @@ def create_llm_manager() -> LLMManager:
         else:
             failed.append(f"{name} ({config.provider.value})")
     
-    logger.info(f"╔══════════════════════════════════════════════════════════════")
-    logger.info(f"║ LLM Manager Initialization Complete")
-    logger.info(f"╠══════════════════════════════════════════════════════════════")
-    logger.info(f"║ Total registered: {len(manager.backends)}")
-    logger.info(f"║ Successfully initialized: {len(initialized)}")
-    
+    logger.info(f"=" * 60)
+    logger.info(f"LLM Manager Initialization Complete")
+    logger.info(f"=" * 60)
+    logger.info(f"Total registered: {len(manager.backends)}")
+    logger.info(f"Successfully initialized: {len(initialized)}")
+
     if initialized:
-        logger.info(f"╠══════════════════════════════════════════════════════════════")
+        logger.info(f"=" * 60)
         
         by_provider = {}
         for backend in initialized:
@@ -288,23 +288,23 @@ def create_llm_manager() -> LLMManager:
             by_provider[provider].append(backend)
         
         for provider, backends in sorted(by_provider.items()):
-            logger.info(f"║ ")
-            logger.info(f"║ {provider.upper()} ({len(backends)} model{'s' if len(backends) > 1 else ''}):")
+            logger.info(f"")
+            logger.info(f"{provider.upper()} ({len(backends)} model{'s' if len(backends) > 1 else ''}):")
             
             for backend in backends:
-                location = "📍 LOCAL" if backend["is_local"] else "☁️  CLOUD"
-                logger.info(f"║    ✓ {backend['name']}")
-                logger.info(f"║       Model: {backend['model']}")
-                logger.info(f"║       Quality: {backend['quality']:.1f}/10 | Cost: {backend['cost']} | Speed: {backend['speed']}")
-                logger.info(f"║       Location: {location}")
-    
+                location = "LOCAL" if backend["is_local"] else "CLOUD"
+                logger.info(f"   {backend['name']}")
+                logger.info(f"      Model: {backend['model']}")
+                logger.info(f"      Quality: {backend['quality']:.1f}/10 | Cost: {backend['cost']} | Speed: {backend['speed']}")
+                logger.info(f"      Location: {location}")
+
     if failed:
-        logger.info(f"╠══════════════════════════════════════════════════════════════")
-        logger.warning(f"║ Failed to initialize: {len(failed)}")
+        logger.info(f"=" * 60)
+        logger.warning(f"Failed to initialize: {len(failed)}")
         for backend in failed:
-            logger.warning(f"║    ✗ {backend}")
-    
-    logger.info(f"╚══════════════════════════════════════════════════════════════")
+            logger.warning(f"   {backend}")
+
+    logger.info(f"=" * 60)
     
     daily_budget = os.getenv("LLM_DAILY_BUDGET", "5.00")
     per_request = os.getenv("LLM_MAX_COST_PER_REQUEST", "0.05")

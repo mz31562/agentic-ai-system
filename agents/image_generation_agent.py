@@ -306,10 +306,10 @@ class ImageGenerationAgent(BaseAgent):
                     match = re.search(pattern, prompt, re.IGNORECASE)
                     if match:
                         text_content = match.group(1).strip()
-                        logger.info(f"✓ Text detected: '{text_content}'")
+                        logger.info(f"Text detected: '{text_content}'")
                         return True, text_content
                 
-                logger.info(f"✓ Text request detected (no quotes)")
+                logger.info(f"Text request detected (no quotes)")
                 return True, None
         
         return False, None
@@ -550,7 +550,7 @@ class ImageGenerationAgent(BaseAgent):
         
         if self.consecutive_failures >= self.max_consecutive_failures:
             self.circuit_open = True
-            logger.error(f"🔴 CIRCUIT BREAKER OPENED - Image generation disabled until manual reset")
+            logger.error(f"CIRCUIT BREAKER OPENED - Image generation disabled until manual reset")
     
     
     async def _send_success_response(self, message: Message, result: Dict[str, Any], request_id: str):
@@ -629,7 +629,7 @@ class ImageGenerationAgent(BaseAgent):
         has_text, text_content = self._detect_text_request(prompt)
         
         if has_text:
-            logger.info(f"🔤 Text-in-image mode activated")
+            logger.info(f"Text-in-image mode activated")
             if text_content:
                 logger.info(f"   Target text: '{text_content}'")
         

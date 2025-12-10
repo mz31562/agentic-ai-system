@@ -527,7 +527,7 @@ Key insight #2: [Valuable takeaway]
 Key insight #3: [Actionable advice]
 
 What's your experience with this? Drop your thoughts below!
-
+""",
 
             "instagram": """Let's talk about {topic}! ✨
 
@@ -541,7 +541,7 @@ Here's what I discovered:
 Tag someone who needs to see this! 👇
 
 Save this for later! 📌
-
+""",
 
             "twitter": """Hot take on {topic}:
 
@@ -552,7 +552,7 @@ Here's why:
 - [Reason 2]
 
 Thoughts? 🤔
-
+""",
 
             "email": """Subject: You'll want to see this about {topic}
 

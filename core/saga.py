@@ -82,6 +82,9 @@ class Saga:
         self.completed_at: Optional[datetime] = None
         
         self._response_futures: Dict[str, asyncio.Future] = {}
+        
+        # IMPORTANT: Use consistent saga agent ID
+        self.saga_agent_id = f"saga_{self.saga_id}"
     
     
     async def execute(self) -> Dict[str, Any]:
@@ -180,6 +183,7 @@ class Saga:
             
             except Exception as e:
                 result.error = str(e)
+                logger.warning(f"Saga {self.saga_id}: Step '{step.name}' attempt {attempt + 1} failed: {e}")
                 
                 if attempt >= step.max_retries:
                     result.status = StepStatus.FAILED
@@ -191,57 +195,101 @@ class Saga:
     
     
     async def _execute_step(self, step: SagaStep) -> Dict[str, Any]:
-        """Execute a single saga step"""
+        """Execute a single saga step - FIXED VERSION"""
         
+        # Build payload for the agent
         try:
             payload = step.build_payload(self.all_results)
         except Exception as e:
             raise Exception(f"Failed to build payload for step '{step.name}': {e}")
         
+        # Create unique correlation ID for this specific request
         correlation_id = f"{self.saga_id}_step_{step.name}_{uuid.uuid4().hex[:8]}"
         
+        # Create future to wait for response
         response_future = asyncio.Future()
         self._response_futures[correlation_id] = response_future
         
+        # Response handler
         async def response_handler(message: Message):
+            logger.debug(
+                f"Saga response handler called: "
+                f"message.correlation_id={message.correlation_id}, "
+                f"expected={correlation_id}"
+            )
+            
             if message.correlation_id == correlation_id:
                 if not response_future.done():
+                    logger.info(f"Saga {self.saga_id}: Received response for step '{step.name}'")
                     response_future.set_result(message.payload)
+                else:
+                    logger.warning(f"Saga {self.saga_id}: Duplicate response for step '{step.name}'")
+            else:
+                logger.debug(
+                    f"Saga {self.saga_id}: Correlation ID mismatch - "
+                    f"got {message.correlation_id}, expected {correlation_id}"
+                )
+        
+        # CRITICAL FIX: Subscribe using the SAME agent_id as the sender
+        # This ensures responses are properly routed back to us
+        logger.debug(f"Saga {self.saga_id}: Subscribing as '{self.saga_agent_id}' to topic '{step.response_topic}'")
         
         self.message_bus.subscribe(
             topic=step.response_topic,
-            agent_id=f"saga_{self.saga_id}_{step.name}",
+            agent_id=self.saga_agent_id,  # ← FIXED: Use consistent agent_id
             callback=response_handler
         )
         
         try:
+            # Send request to agent
+            logger.debug(
+                f"Saga {self.saga_id}: Sending request to '{step.agent}' "
+                f"on topic '{step.request_topic}' with correlation_id '{correlation_id}'"
+            )
+            
             await self.message_bus.publish(Message(
                 type="request",
-                sender=f"saga_{self.saga_id}",
+                sender=self.saga_agent_id,  # ← FIXED: Matches subscription agent_id
                 recipient=step.agent,
                 topic=step.request_topic,
                 payload=payload,
                 correlation_id=correlation_id
             ))
             
+            logger.info(
+                f"Saga {self.saga_id}: Waiting for response from '{step.agent}' "
+                f"(timeout: {step.timeout}s)"
+            )
+            
+            # Wait for response with timeout
             response = await asyncio.wait_for(
                 response_future,
                 timeout=step.timeout
             )
             
+            logger.info(f"Saga {self.saga_id}: Step '{step.name}' completed successfully")
             return response
         
         except asyncio.TimeoutError:
+            logger.error(
+                f"Saga {self.saga_id}: Step '{step.name}' timed out after {step.timeout}s. "
+                f"No response received from '{step.agent}'"
+            )
             raise Exception(f"Step '{step.name}' timed out after {step.timeout}s")
         
         except Exception as e:
+            logger.error(f"Saga {self.saga_id}: Step '{step.name}' failed: {e}")
             raise Exception(f"Step '{step.name}' failed: {e}")
         
         finally:
+            # Cleanup: unsubscribe and clean up future
+            logger.debug(f"Saga {self.saga_id}: Cleaning up subscription for step '{step.name}'")
+            
             self.message_bus.unsubscribe(
                 topic=step.response_topic,
-                agent_id=f"saga_{self.saga_id}_{step.name}"
+                agent_id=self.saga_agent_id  # ← FIXED: Use consistent agent_id
             )
+            
             if correlation_id in self._response_futures:
                 del self._response_futures[correlation_id]
     
@@ -257,11 +305,13 @@ class Saga:
         logger.warning(f"Saga {self.saga_id}: Starting compensation (rollback)")
         self.status = SagaStatus.COMPENSATING
         
+        # Get all completed steps that have compensation functions
         completed_steps = [
             step for step in self.steps[:self.current_step_index + 1]
             if step.name in self.all_results and step.compensate is not None
         ]
         
+        # Execute compensations in reverse order
         for step in reversed(completed_steps):
             try:
                 logger.info(f"Saga {self.saga_id}: Compensating step '{step.name}'")

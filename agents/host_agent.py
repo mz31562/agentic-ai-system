@@ -33,7 +33,6 @@ class HostAgent(BaseAgent):
             ]
         )
         
-
         self.active_requests: Dict[str, Dict[str, Any]] = {}
         
         self.saga_coordinator = SagaCoordinator(message_bus)
@@ -52,7 +51,6 @@ class HostAgent(BaseAgent):
             }
         }
         
-
         self.request_patterns = {
             "design": [
                 r"create.*post",
@@ -170,7 +168,7 @@ class HostAgent(BaseAgent):
         Execute design + image workflow using Saga pattern
         This replaces the old _route_to_design_and_image method
         """
-        logger.info(f"🔄 Starting Saga workflow for request {request_id}")
+        logger.info(f"Starting Saga workflow for request {request_id}")
         
         self.active_requests[request_id]["status"] = "saga_started"
         self.active_requests[request_id]["workflow_type"] = "design_with_image"
@@ -209,7 +207,7 @@ class HostAgent(BaseAgent):
         ]
         
         try:
-            logger.info(f"📋 Saga steps defined: {len(steps)} steps")
+            logger.info(f"Saga steps defined: {len(steps)} steps")
             result = await self.saga_coordinator.start_saga(
                 name="design_with_image",
                 steps=steps,
@@ -217,14 +215,14 @@ class HostAgent(BaseAgent):
             )
             
             if result["status"] == "success":
-                logger.info(f"✅ Saga completed successfully for request {request_id}")
+                logger.info(f"Saga completed successfully for request {request_id}")
                 await self._send_saga_success_response(
                     original_message,
                     result["results"],
                     request_id
                 )
             else:
-                logger.error(f"❌ Saga failed for request {request_id}")
+                logger.error(f"Saga failed for request {request_id}")
                 await self._send_saga_failure_response(
                     original_message,
                     result,
@@ -232,7 +230,7 @@ class HostAgent(BaseAgent):
                 )
         
         except Exception as e:
-            logger.error(f"💥 Saga execution error: {e}", exc_info=True)
+            logger.error(f"Saga execution error: {e}", exc_info=True)
             await self.send_error(
                 original_message=original_message,
                 error=f"Saga execution failed: {str(e)}",
@@ -250,22 +248,22 @@ class HostAgent(BaseAgent):
         design_result = results.get("design_post", {})
         image_result = results.get("generate_image", {})
         
-        combined_message = "✅ Your post with image is ready!\n\n"
-        combined_message += "📝 Post Content:\n"
+        combined_message = "Your post with image is ready.\n\n"
+        combined_message += "Post Content:\n"
         combined_message += "─" * 50 + "\n"
         combined_message += design_result.get("design_result", "")
         combined_message += "\n" + "─" * 50 + "\n\n"
-        combined_message += "🖼️ Image Details:\n"
+        combined_message += "Image Details:\n"
         
         img_data = image_result.get("image_result", {})
         if img_data.get("image_path"):
-            combined_message += f"   📁 Saved to: {img_data['image_path']}\n"
+            combined_message += f"   Saved to: {img_data['image_path']}\n"
         if img_data.get("image_url"):
-            combined_message += f"   🔗 URL: {img_data['image_url']}\n"
+            combined_message += f"   URL: {img_data['image_url']}\n"
         
         design_meta = design_result.get("metadata", {})
         if design_meta.get("backend_used"):
-            combined_message += f"\n💡 Generated using: {design_meta.get('backend_used')}"
+            combined_message += f"\nGenerated using: {design_meta.get('backend_used')}"
         
         await self.send_response(
             original_message=original_message,
@@ -274,7 +272,7 @@ class HostAgent(BaseAgent):
                 "result": combined_message,
                 "design": design_result,
                 "image": image_result,
-                "message": "Your complete post package is ready!",
+                "message": "Your complete post package is ready",
                 "request_id": request_id,
                 "workflow_type": "saga"
             },
@@ -298,16 +296,16 @@ class HostAgent(BaseAgent):
         request_id: str
     ):
         """Send saga failure response to user"""
-        error_msg = f"❌ Workflow failed: {result.get('error', 'Unknown error')}\n\n"
+        error_msg = f"Workflow failed: {result.get('error', 'Unknown error')}\n\n"
         
         if result.get("failed_step"):
             error_msg += f"Failed at step: {result['failed_step']}\n"
         
         if result.get("partial_results"):
-            error_msg += "\n⚠️ Partial results were generated but automatically rolled back.\n"
+            error_msg += "\nPartial results were generated but automatically rolled back.\n"
             error_msg += "No incomplete data was saved.\n"
         
-        error_msg += "\n💡 Please try again or rephrase your request."
+        error_msg += "\nPlease try again or rephrase your request."
         
         await self.send_response(
             original_message=original_message,
@@ -338,7 +336,7 @@ class HostAgent(BaseAgent):
         Rollback design step
         Called automatically if image generation fails
         """
-        logger.info("🔄 Compensating design step...")
+        logger.info("Compensating design step...")
         
         try:
             design_data = results.get("design_post", {})
@@ -358,10 +356,10 @@ class HostAgent(BaseAgent):
                 except Exception as e:
                     logger.warning(f"   Could not delete design file: {e}")
             
-            logger.info("✅ Design compensation completed")
+            logger.info("Design compensation completed")
         
         except Exception as e:
-            logger.error(f"❌ Design compensation failed: {e}", exc_info=True)
+            logger.error(f"Design compensation failed: {e}", exc_info=True)
     
     
     async def _compensate_image(self, message_bus: MessageBus, results: Dict[str, Any]):
@@ -369,7 +367,7 @@ class HostAgent(BaseAgent):
         Rollback image generation step
         Called automatically if subsequent steps fail
         """
-        logger.info("🔄 Compensating image step...")
+        logger.info("Compensating image step...")
         
         try:
             image_data = results.get("generate_image", {})
@@ -394,10 +392,10 @@ class HostAgent(BaseAgent):
                 logger.info(f"   Image was uploaded to: {image_url}")
                 # TODO: Implement cloud storage deletion
             
-            logger.info("✅ Image compensation completed")
+            logger.info("Image compensation completed")
         
         except Exception as e:
-            logger.error(f"❌ Image compensation failed: {e}", exc_info=True)
+            logger.error(f"Image compensation failed: {e}", exc_info=True)
     
     
     def _analyze_request(self, user_message: str) -> str:
@@ -415,7 +413,6 @@ class HostAgent(BaseAgent):
                     logger.info(f"Request classified as: {request_type}")
                     return request_type
         
-
         logger.info("Request type: design (default)")
         return "design"
     
@@ -514,7 +511,6 @@ class HostAgent(BaseAgent):
         if request_id in self.active_requests:
             request = self.active_requests[request_id]
             
-
             if request.get("workflow_type") == "design_with_image":
                 logger.debug(f"Design response for saga workflow - handled by SagaCoordinator")
                 return
@@ -529,7 +525,7 @@ class HostAgent(BaseAgent):
                 payload={
                     "response_type": "design",
                     "result": message.payload.get("design_result", ""),
-                    "message": "Your design is ready!",
+                    "message": "Your design is ready",
                     "metadata": message.payload.get("metadata", {})
                 },
                 topic="user_response"
@@ -565,7 +561,7 @@ class HostAgent(BaseAgent):
                 payload={
                     "response_type": "image",
                     "result": message.payload.get("image_result", {}),
-                    "message": "Your image is ready!",
+                    "message": "Your image is ready",
                 },
                 topic="user_response"
             )
@@ -620,7 +616,7 @@ class HostAgent(BaseAgent):
     
     
     def get_saga_status_summary(self) -> Dict[str, Any]:
-        """Get summary of active sagas (NEW)"""
+        """Get summary of active sagas"""
         if not hasattr(self, 'saga_coordinator'):
             return {"active_sagas": 0, "sagas": []}
         

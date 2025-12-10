@@ -171,7 +171,7 @@ class LLMManager:
         warn_threshold = float(os.getenv("LLM_WARN_AT_PERCENT", "80")) / 100
         if (self.daily_spend + estimated_cost) / daily_budget >= warn_threshold and self.budget_warnings_sent == 0:
             self.budget_warnings_sent += 1
-            warning = f"⚠️ Budget warning: ${self.daily_spend + estimated_cost:.2f}/{daily_budget:.2f} ({((self.daily_spend + estimated_cost) / daily_budget * 100):.1f}%)"
+            warning = f"Budget warning: ${self.daily_spend + estimated_cost:.2f}/{daily_budget:.2f} ({((self.daily_spend + estimated_cost) / daily_budget * 100):.1f}%)"
             logger.warning(warning)
             return True, warning
         
@@ -461,7 +461,7 @@ class LLMManager:
                     backend_name, prompt, max_tokens, temperature, **kwargs
                 )
                 
-                logger.info(f"✓ Successfully used backend: {backend_name} (cost: ${result['cost']:.4f})")
+                logger.info(f"Successfully used backend: {backend_name} (cost: ${result['cost']:.4f})")
                 return result
                 
             except Exception as e:
@@ -762,7 +762,7 @@ class LLMManager:
         if cb["consecutive_failures"] >= 3 and not cb["is_open"]:
             cb["is_open"] = True
             cb["opened_at"] = time.time()
-            logger.warning(f"🔴 Circuit breaker OPENED for {backend} (3 consecutive failures)")
+            logger.warning(f"Circuit breaker OPENED for {backend} (3 consecutive failures)")
     
     
     def get_budget_status(self) -> Dict[str, Any]:
