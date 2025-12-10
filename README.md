@@ -1,161 +1,157 @@
-# 🤖 Agentic AI Marketing System
+# Agentic AI Marketing System
 
-A sophisticated multi-agent AI system for generating high-quality marketing content and images. Intelligently routes requests between specialized AI agents and supports multiple LLM backends with automatic failover.
+A multi-agent AI system for automated marketing content generation and image synthesis. The system implements intelligent request routing between specialized agents and supports multiple LLM backends with automatic failover capabilities.
 
-## ✨ Features
+## Features
 
-### 🧠 Multi-Agent Architecture
-- **Host Agent**: Central coordinator that routes requests to specialist agents
-- **PostDesign Agent**: Creates marketing copy, social media posts, email campaigns, and sales content
-- **Image Generation Agent**: Generates images with ComfyUI, DALL-E, Replicate, or Segmind backends
+### Multi-Agent Architecture
+- **Host Agent**: Central coordinator for request routing to specialist agents
+- **PostDesign Agent**: Generates marketing copy, social media posts, email campaigns, and sales content
+- **Image Generation Agent**: Produces images using ComfyUI, DALL-E, Replicate, or Segmind backends
 
-### 🔄 Intelligent LLM Backend Selection
-- **Multiple LLM Providers**: Groq, Ollama (local), OpenAI, Claude, HuggingFace
-- **Unbiased Backend Routing**: Selects optimal backend based on task type, complexity, cost, and speed preferences
-- **Automatic Failover**: Falls back to next best backend if one fails
-- **Circuit Breaker**: Temporarily disables failing services
-- **Cost-Aware**: Respects budget constraints per request
+### LLM Backend Management
+- **Multiple Provider Support**: Groq, Ollama (local), OpenAI, Claude, HuggingFace
+- **Dynamic Backend Selection**: Optimizes backend choice based on task type, complexity, cost, and performance metrics
+- **Automatic Failover**: Seamless fallback to alternative backends on failure
+- **Circuit Breaker Pattern**: Temporarily disables failing services to prevent cascading failures
+- **Cost Management**: Enforces budget constraints per request
 
-### 🎨 Advanced Image Generation
+### Image Generation Capabilities
 - **Multiple Backends**: ComfyUI (local SDXL), DALL-E, Replicate, Segmind
-- **Text-in-Image Optimization**: Detects and optimizes prompts for text generation in images
-- **Robust Retry Logic**: Automatic retries with exponential backoff
-- **Quality Enhancement**: Intelligently enhances prompts for better results
-- **Fallback Mode**: Mock generation if no backend available
+- **Text-in-Image Optimization**: Detects and optimizes prompts for text generation within images
+- **Retry Logic**: Implements exponential backoff for failed requests
+- **Prompt Enhancement**: Automatically improves prompts for higher quality output
+- **Fallback Mode**: Mock generation when no backend is available
 
-### 📱 Content Type Support
-- LinkedIn posts (professional)
-- Instagram captions (visual storytelling)
-- Twitter/X threads (concise, engaging)
-- Email campaigns (conversational)
-- Blog articles (long-form)
-- Ad copy (benefit-driven)
+### Content Type Support
+- LinkedIn posts
+- Instagram captions
+- Twitter/X threads
+- Email campaigns
+- Blog articles
+- Advertisement copy
 - Product descriptions
 - Sales pitches
 
-### 🎯 Tone & Style Detection
-Automatically detects or allows specification of:
+### Tone and Style Detection
+Automatic detection and configuration of:
 - Professional, casual, enthusiastic
 - Educational, persuasive, inspiring
 - Humorous, urgent
 
-## 🚀 Quick Start
+## Installation
 
 ### Prerequisites
-```bash
-# Python 3.9+
-python --version
+- Python 3.9 or higher
+- Git
 
-# Clone and navigate to project
+### Setup
+
+1. Clone the repository:
+```bash
+git clone <repository-url>
 cd agentic-ai-system
 ```
 
-### Installation
-
-1. **Install dependencies**:
+2. Install dependencies:
 ```bash
 pip install -r requirements.txt
 ```
 
-2. **Configure `.env` file** with your API keys and preferences:
+3. Configure environment variables in `.env`:
 ```bash
-# Core LLM backends (choose at least one)
+# Core LLM backends (configure at least one)
 LLM_GROQ_ENABLED=true
 LLM_GROQ_API_KEY=your_groq_api_key
 
 LLM_OPENAI_ENABLED=true
 LLM_OPENAI_API_KEY=your_openai_api_key
 
-# OR use free local Ollama
+# Local Ollama option
 LLM_OLLAMA_ENABLED=true
 LLM_OLLAMA_BASE_URL=http://localhost:11434
 
-# Image generation
-IMAGE_BACKEND=comfyui  # or dalle, replicate, segmind
-COMFYUI_URL=http://127.0.0.1:8188  # if using ComfyUI
+# Image generation configuration
+IMAGE_BACKEND=comfyui  # Options: comfyui, dalle, replicate, segmind
+COMFYUI_URL=http://127.0.0.1:8188
 ```
 
-3. **Optional: Start ComfyUI** (if using local image generation):
+4. (Optional) Start ComfyUI for local image generation:
 ```bash
 cd ComfyUI
 python main.py --listen --port 8188
 ```
 
-4. **Run the CLI**:
+5. Launch the CLI:
 ```bash
 python main.py
 ```
 
-## 📖 Usage Examples
+## Usage
 
-### Example 1: Generate a LinkedIn Post
+### Generate LinkedIn Post
 ```
-You: Create a professional LinkedIn post about AI in marketing
-Agent: [Generates thought-leadership post using optimal LLM]
-```
-
-### Example 2: Create Instagram Post with Image
-```
-You: Design an Instagram post with an image about digital marketing trends
-Host Agent: Routes to both PostDesign and Image agents
-Result: Post copy + generated image
+Input: Create a professional LinkedIn post about AI in marketing
+Output: Generates thought-leadership content using optimal LLM
 ```
 
-### Example 3: Email Campaign
+### Create Instagram Post with Image
 ```
-You: Write a persuasive email campaign about our new SaaS product
-PostDesign Agent: Creates benefit-focused email with strong CTA
-```
-
-### Example 4: Generate Product Image
-```
-You: Create an image of a sleek modern laptop in a minimalist workspace
-Image Agent: Generates high-quality product image using SDXL
+Input: Design an Instagram post with an image about digital marketing trends
+Output: Post copy and generated image
 ```
 
-## 🔧 Configuration
+### Generate Email Campaign
+```
+Input: Write a persuasive email campaign about our new SaaS product
+Output: Benefit-focused email with call-to-action
+```
 
-### LLM Backend Settings (`.env`)
+### Generate Product Image
+```
+Input: Create an image of a sleek modern laptop in a minimalist workspace
+Output: High-quality product image using SDXL
+```
+
+## Configuration
+
+### LLM Backend Settings
 
 ```bash
-# Backend Priority (comma-separated, first = highest priority)
+# Backend priority (comma-separated, highest priority first)
 LLM_BACKEND_PRIORITY=groq,ollama,openai
 
-# Prefer fast responses (recommended for marketing)
+# Performance preferences
 LLM_PREFER_FAST=true
-
-# Prefer local models (privacy-focused)
 LLM_PREFER_LOCAL=false
 
-# Maximum cost per request (USD)
+# Cost control
 LLM_MAX_COST_PER_REQUEST=0.01
-
-# Allow paid backends when needed
 LLM_ALLOW_PAID=true
 ```
 
-### Available LLM Backends
+### LLM Backend Comparison
 
-| Backend | Cost | Speed | Quality | Local | Setup |
-|---------|------|-------|---------|-------|-------|
-| **Groq** | Free | ⚡⚡⚡ | ★★★★☆ | ❌ | API Key |
-| **Ollama** | Free | ⚡⚡ | ★★★☆☆ | ✅ | Local Install |
-| **OpenAI** | $$ | ⚡⚡ | ★★★★★ | ❌ | API Key |
-| **Claude** | $$$ | ⚡ | ★★★★★ | ❌ | API Key |
+| Backend | Cost | Speed | Quality | Local | Requirements |
+|---------|------|-------|---------|-------|--------------|
+| Groq | Free | High | Good | No | API Key |
+| Ollama | Free | Medium | Medium | Yes | Local Install |
+| OpenAI | Paid | Medium | Excellent | No | API Key |
+| Claude | Paid | Low | Excellent | No | API Key |
 
 ### Image Generation Settings
 
 ```bash
-IMAGE_BACKEND=comfyui  # comfyui, dalle, replicate, segmind
-IMAGE_MODEL=sdxl       # Model to use
+IMAGE_BACKEND=comfyui
+IMAGE_MODEL=sdxl
 COMFYUI_URL=http://127.0.0.1:8188
 DEFAULT_IMAGE_SIZE=1024x1024
 IMAGE_MAX_RETRIES=2
 IMAGE_TIMEOUT_SECONDS=300
-ENABLE_TEXT_OPTIMIZATION=true  # Optimize for text-in-image
+ENABLE_TEXT_OPTIMIZATION=true
 ```
 
-## 📊 System Architecture
+## System Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────┐
@@ -176,34 +172,21 @@ ENABLE_TEXT_OPTIMIZATION=true  # Optimize for text-in-image
 │ Routes   │  │ Marketing │  │            │  │ Routes to   │
 │ Requests │  │ Copy      │  │ ComfyUI    │  │ Best LLM    │
 │          │  │ Design    │  │ DALL-E     │  │ Backend     │
-└────────┬─┘  └───────┬───┘  └───┬────────┘  └─┬──────────┘
-         │            │          │            │
-         │            └─────────▼────────────┬┘
-         │                      │
-         └──────────────────────▼──────────────┐
-                                               │
-                        ┌──────────────────────▼─────┐
-                        │  LLM Backends              │
-                        ├────────────────────────────┤
-                        │ • Groq (Free, Fast)       │
-                        │ • Ollama (Free, Local)    │
-                        │ • OpenAI (GPT-4)          │
-                        │ • Claude (Creative)       │
-                        └────────────────────────────┘
+└──────────┘  └───────────┘  └───────────┘  └─────────────┘
 ```
 
-## 📦 Project Structure
+## Project Structure
 
 ```
 agentic-ai-system/
-├── main.py                          # Entry point
-├── requirements.txt                 # Dependencies
-├── .env                            # Configuration (API keys)
+├── main.py                          # Application entry point
+├── requirements.txt                 # Python dependencies
+├── .env                            # Configuration file
 │
 ├── core/                           # Core system components
 │   ├── message_bus.py             # Async pub/sub messaging
 │   ├── agent_base.py              # Base agent class
-│   ├── llm_manager.py             # LLM routing & selection
+│   ├── llm_manager.py             # LLM routing and selection
 │   └── llm_factory.py             # LLM initialization
 │
 ├── agents/                         # Specialized agents
@@ -214,34 +197,25 @@ agentic-ai-system/
 ├── interfaces/                     # User interfaces
 │   └── cli_app.py                 # Command-line interface
 │
-├── ComfyUI/                        # Local SDXL image generation (optional)
+├── ComfyUI/                        # Local SDXL generation (optional)
 │   └── main.py                    # ComfyUI server
 │
 └── generated_images/              # Output directory
 ```
 
-## 🎮 CLI Commands
+## CLI Commands
 
 ```
-You: /help
-     Shows available commands
-
-You: /status
-     Displays system status, available backends, usage statistics
-
-You: /clear
-     Clear the terminal
-
-You: /exit
-     Gracefully shutdown the system
-
-You: (any message)
-     Send a request to the agent system
+/help     - Display available commands
+/status   - Show system status and backend performance metrics
+/clear    - Clear terminal
+/exit     - Shutdown system
 ```
 
-## 📊 Monitoring & Status
+## Monitoring
 
-Check system status and backend performance:
+View system status and backend performance:
+
 ```
 /status
 
@@ -262,107 +236,101 @@ LLM Manager:
       Tokens: 1,234
       Cost: $0.000612
       Avg Latency: 450ms
-   ...
 ```
 
-## 🧪 Testing
+## Testing
 
 ### Test Backend Selection
 ```bash
 python test_unbiased.py
 ```
 
-Shows how the system ranks and selects backends for different task types and complexities.
-
 ### Test ComfyUI Connection
 ```bash
 python test_comfyui_connection.py
 ```
 
-Verifies ComfyUI is running and accessible.
+## Security Considerations
 
-## 🔐 Security & Privacy
+- **Local Processing**: Use Ollama for local, private processing
+- **Cost Control**: Configure `LLM_MAX_COST_PER_REQUEST` to limit spending
+- **API Keys**: Never commit `.env` file to version control
+- **Environment Variables**: Store all sensitive data in `.env` only
 
-- **Local Processing**: Use Ollama for 100% local, private processing
-- **Cost Control**: Set `LLM_MAX_COST_PER_REQUEST` to limit spending
-- **API Keys**: Never commit `.env` to version control
-- **Environment Variables**: All sensitive data in `.env` only
+## Troubleshooting
 
-## 🚨 Troubleshooting
-
-### "No LLM backends available"
-- Ensure at least one backend is enabled in `.env`
-- For Groq: Verify API key is valid
-- For Ollama: Ensure it's running (`python main.py --listen`)
-- For OpenAI: Check API key format and account status
+### No LLM backends available
+- Verify at least one backend is enabled in `.env`
+- Confirm API keys are valid
+- For Ollama: Ensure service is running
+- Check account status for paid services
 
 ### ComfyUI connection failed
 ```bash
-# Start ComfyUI if using image generation
 cd ComfyUI
 python main.py --listen --port 8188
 ```
 
-### "Image generation timed out"
+### Image generation timeout
 - Increase `IMAGE_TIMEOUT_SECONDS` in `.env`
-- Check ComfyUI is running and responsive
-- Lower `DEFAULT_IMAGE_SIZE` for faster generation
+- Verify ComfyUI is running and responsive
+- Reduce `DEFAULT_IMAGE_SIZE` for faster generation
 
 ### Circuit breaker open
-- Wait 60 seconds for backend to recover
-- Or restart the application
-- Check backend logs for underlying issues
+- Wait 60 seconds for automatic recovery
+- Restart application if issue persists
+- Review backend logs for root cause
 
-## 📚 Advanced Features
+## Advanced Features
 
-### Unbiased Backend Selection
-The system uses sophisticated scoring to fairly rank backends:
-- Base quality score (reasoning, creativity, code ability)
+### Backend Selection Algorithm
+The system implements a scoring mechanism for backend selection based on:
+- Base quality metrics (reasoning, creativity, code generation)
 - Task complexity matching
-- Speed preferences
-- Cost considerations
-- User-defined priority list
+- Performance requirements
+- Cost constraints
+- User-defined priorities
 
-See [LLMManager._calculate_backend_score](core/llm_manager.py) for details.
+See `core/llm_manager.py:_calculate_backend_score` for implementation details.
 
 ### Text-in-Image Optimization
-When detecting text requests, the system:
-1. Identifies text generation intent
-2. Extracts the target text
-3. Uses text-optimized prompts
-4. Applies enhanced prompts with text quality keywords
-5. Selects optimal samplers for text clarity
+Text generation detection and optimization process:
+1. Analyze prompt for text generation intent
+2. Extract target text content
+3. Apply text-optimized prompt templates
+4. Enhance prompt with text quality keywords
+5. Select optimal samplers for text clarity
 
-## 🤝 Contributing
+## Contributing
 
 To extend the system:
 
-1. **Add a new Agent**: Inherit from [BaseAgent](core/agent_base.py)
-2. **Add LLM Provider**: Register in [llm_factory.py](core/llm_factory.py)
-3. **Add Image Backend**: Extend [ImageGenerationAgent](agents/image_generation_agent.py)
+1. **New Agent**: Inherit from `BaseAgent` in `core/agent_base.py`
+2. **LLM Provider**: Register in `core/llm_factory.py`
+3. **Image Backend**: Extend `ImageGenerationAgent` in `agents/image_generation_agent.py`
 
-## 📝 License
+## License
 
-[Add your license here]
+MIT License
 
-## 📞 Support
+## Support
 
 For issues or questions:
-1. Check `.env` configuration
-2. Review system logs in console output
-3. Test individual components with test scripts
-4. Check backend-specific documentation
+1. Review `.env` configuration
+2. Check console logs
+3. Run component tests
+4. Consult provider-specific documentation
 
-## 🎯 Roadmap
+## Roadmap
 
-- [ ] Web UI dashboard
-- [ ] Prompt templates library
-- [ ] Analytics & reporting
-- [ ] A/B testing for copy variations
-- [ ] Multi-language support
-- [ ] Custom model fine-tuning
-- [ ] Scheduled content generation
+- Web UI dashboard
+- Prompt template library
+- Analytics and reporting
+- A/B testing for content variations
+- Multi-language support
+- Custom model fine-tuning
+- Scheduled content generation
 
 ---
 
-**Made with ❤️ for marketing professionals and AI enthusiasts**
+**A professional AI system for automated marketing content generation**
