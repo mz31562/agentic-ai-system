@@ -1,4 +1,3 @@
-# C:\Users\MohammedZaid\Desktop\agentic-ai-system\agents\host_agent.py
 import asyncio
 import re
 from typing import Dict, Any, Optional
@@ -30,18 +29,16 @@ class HostAgent(BaseAgent):
                 "response_aggregation",
                 "user_interface",
                 "coordination",
-                "saga_orchestration"  # NEW
+                "saga_orchestration" 
             ]
         )
         
-        # Track active requests
+
         self.active_requests: Dict[str, Dict[str, Any]] = {}
         
-        # NEW: Saga Coordinator for multi-step workflows
         self.saga_coordinator = SagaCoordinator(message_bus)
         logger.info("Saga orchestration enabled")
         
-        # Agent registry - which agents are available
         self.available_agents = {
             "post_design_agent": {
                 "name": "PostDesign Agent",
@@ -55,7 +52,7 @@ class HostAgent(BaseAgent):
             }
         }
         
-        # Request patterns for routing
+
         self.request_patterns = {
             "design": [
                 r"create.*post",
@@ -87,28 +84,24 @@ class HostAgent(BaseAgent):
     
     async def setup(self):
         """Subscribe to relevant topics"""
-        # User requests from UI/CLI
         self.message_bus.subscribe(
             topic="user_request",
             agent_id=self.agent_id,
             callback=self._process_message
         )
         
-        # Responses from PostDesignAgent
         self.message_bus.subscribe(
             topic="design_response",
             agent_id=self.agent_id,
             callback=self._process_message
         )
         
-        # Responses from ImageGenerationAgent
         self.message_bus.subscribe(
             topic="image_response",
             agent_id=self.agent_id,
             callback=self._process_message
         )
         
-        # Error notifications
         self.message_bus.subscribe(
             topic="error",
             agent_id=self.agent_id,
@@ -141,7 +134,6 @@ class HostAgent(BaseAgent):
         
         logger.info(f"Host Agent processing user request: '{user_message}'")
         
-        # Track this request
         request_id = message.correlation_id or message.id
         self.active_requests[request_id] = {
             "request_id": request_id,
@@ -153,10 +145,8 @@ class HostAgent(BaseAgent):
             "pending_responses": []
         }
         
-        # Determine request type and route
         request_type = self._analyze_request(user_message)
         
-        # NEW: Use Saga for multi-agent workflows
         if request_type == "design_with_image":
             await self._execute_design_image_saga(message, user_message, request_id)
         
@@ -168,11 +158,7 @@ class HostAgent(BaseAgent):
         
         else:
             await self._handle_unknown_request(message, user_message)
-    
-    
-    # ========================================================================
-    # NEW: SAGA WORKFLOW EXECUTION
-    # ========================================================================
+
     
     async def _execute_design_image_saga(
         self,
@@ -189,9 +175,7 @@ class HostAgent(BaseAgent):
         self.active_requests[request_id]["status"] = "saga_started"
         self.active_requests[request_id]["workflow_type"] = "design_with_image"
         
-        # Define saga steps
         steps = [
-            # Step 1: Generate post design
             SagaStep(
                 name="design_post",
                 agent="post_design_agent",
@@ -208,7 +192,6 @@ class HostAgent(BaseAgent):
                 compensate=self._compensate_design
             ),
             
-            # Step 2: Generate image (uses design from step 1)
             SagaStep(
                 name="generate_image",
                 agent="image_generation_agent",
@@ -226,7 +209,6 @@ class HostAgent(BaseAgent):
         ]
         
         try:
-            # Execute saga
             logger.info(f"📋 Saga steps defined: {len(steps)} steps")
             result = await self.saga_coordinator.start_saga(
                 name="design_with_image",
@@ -268,7 +250,6 @@ class HostAgent(BaseAgent):
         design_result = results.get("design_post", {})
         image_result = results.get("generate_image", {})
         
-        # Build combined message
         combined_message = "✅ Your post with image is ready!\n\n"
         combined_message += "📝 Post Content:\n"
         combined_message += "─" * 50 + "\n"
@@ -282,7 +263,6 @@ class HostAgent(BaseAgent):
         if img_data.get("image_url"):
             combined_message += f"   🔗 URL: {img_data['image_url']}\n"
         
-        # Get metadata
         design_meta = design_result.get("metadata", {})
         if design_meta.get("backend_used"):
             combined_message += f"\n💡 Generated using: {design_meta.get('backend_used')}"
@@ -306,7 +286,6 @@ class HostAgent(BaseAgent):
         
         logger.info(f"Saga workflow completed successfully for request {request_id}")
         
-        # Cleanup after delay
         await asyncio.sleep(60)
         if request_id in self.active_requests:
             del self.active_requests[request_id]
@@ -349,15 +328,10 @@ class HostAgent(BaseAgent):
         
         logger.error(f"Saga workflow failed for request {request_id}")
         
-        # Cleanup after delay
         await asyncio.sleep(60)
         if request_id in self.active_requests:
             del self.active_requests[request_id]
     
-    
-    # ========================================================================
-    # COMPENSATION FUNCTIONS (Rollback Logic)
-    # ========================================================================
     
     async def _compensate_design(self, message_bus: MessageBus, results: Dict[str, Any]):
         """
@@ -369,19 +343,11 @@ class HostAgent(BaseAgent):
         try:
             design_data = results.get("design_post", {})
             
-            # If design was saved to database, delete it
             design_id = design_data.get("id")
             if design_id:
                 logger.info(f"   Deleting design {design_id} from database")
                 # TODO: Implement actual database deletion
-                # await message_bus.publish(Message(
-                #     type="request",
-                #     sender=self.agent_id,
-                #     topic="db_delete_request",
-                #     payload={"entity": "design", "id": design_id}
-                # ))
             
-            # If design was saved to file, delete it
             design_file = design_data.get("file_path")
             if design_file:
                 try:
@@ -406,7 +372,6 @@ class HostAgent(BaseAgent):
         logger.info("🔄 Compensating image step...")
         
         try:
-            # Delete generated image file
             image_data = results.get("generate_image", {})
             image_result = image_data.get("image_result", {})
             image_path = image_result.get("image_path")
@@ -424,12 +389,10 @@ class HostAgent(BaseAgent):
             else:
                 logger.info("   No image path to clean up")
             
-            # If image was uploaded to cloud storage, delete it
             image_url = image_result.get("image_url")
             if image_url and image_url.startswith("http"):
                 logger.info(f"   Image was uploaded to: {image_url}")
                 # TODO: Implement cloud storage deletion
-                # await self._delete_from_cloud_storage(image_url)
             
             logger.info("✅ Image compensation completed")
         
@@ -437,28 +400,22 @@ class HostAgent(BaseAgent):
             logger.error(f"❌ Image compensation failed: {e}", exc_info=True)
     
     
-    # ========================================================================
-    # ORIGINAL ROUTING METHODS (for single-agent requests)
-    # ========================================================================
-    
     def _analyze_request(self, user_message: str) -> str:
         """Analyze user message to determine request type."""
         message_lower = user_message.lower()
         
-        # Check design_with_image first (most specific)
         for pattern in self.request_patterns.get("design_with_image", []):
             if re.search(pattern, message_lower):
                 logger.info(f"Request classified as: design_with_image (will use Saga)")
                 return "design_with_image"
         
-        # Then check others
         for request_type in ["design", "image"]:
             for pattern in self.request_patterns.get(request_type, []):
                 if re.search(pattern, message_lower):
                     logger.info(f"Request classified as: {request_type}")
                     return request_type
         
-        # Default to design for marketing queries
+
         logger.info("Request type: design (default)")
         return "design"
     
@@ -544,14 +501,9 @@ class HostAgent(BaseAgent):
         
         logger.info("Defaulting to design agent for unclear request")
         
-        # Default to design agent for marketing-related queries
         request_id = message.correlation_id or message.id
         await self._route_to_design_agent(message, user_message, request_id)
     
-    
-    # ========================================================================
-    # RESPONSE HANDLERS (for backwards compatibility with single-agent flows)
-    # ========================================================================
     
     async def handle_design_response(self, message: Message):
         """Handle response from PostDesignAgent."""
@@ -562,12 +514,11 @@ class HostAgent(BaseAgent):
         if request_id in self.active_requests:
             request = self.active_requests[request_id]
             
-            # Check if this is a saga workflow (saga handles its own responses)
+
             if request.get("workflow_type") == "design_with_image":
                 logger.debug(f"Design response for saga workflow - handled by SagaCoordinator")
                 return
             
-            # Single response, send it
             request["status"] = "completed"
             request["completed_at"] = datetime.utcnow().isoformat()
             
@@ -600,12 +551,10 @@ class HostAgent(BaseAgent):
         if request_id in self.active_requests:
             request = self.active_requests[request_id]
             
-            # Check if this is a saga workflow (saga handles its own responses)
             if request.get("workflow_type") == "design_with_image":
                 logger.debug(f"Image response for saga workflow - handled by SagaCoordinator")
                 return
             
-            # Single response, send it
             request["status"] = "completed"
             request["completed_at"] = datetime.utcnow().isoformat()
             
@@ -626,11 +575,7 @@ class HostAgent(BaseAgent):
                 del self.active_requests[request_id]
         else:
             logger.warning(f"Received response for unknown request: {request_id}")
-    
-    
-    # NOTE: Old _send_combined_response method removed - replaced by Saga pattern
-    
-    
+        
     async def handle_error(self, message: Message):
         """Handle error notifications from other agents"""
         

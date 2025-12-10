@@ -1,4 +1,3 @@
-# core/llm_manager.py
 import asyncio
 import logging
 from typing import Dict, Any, Optional, List, Callable
@@ -36,23 +35,19 @@ class LLMConfig:
     api_key: Optional[str] = None
     base_url: Optional[str] = None
     
-    # Performance characteristics
     cost_per_1k_tokens: float = 0.0  # USD
     avg_latency_ms: int = 1000
     max_tokens: int = 4096
     
-    # Capabilities
     supports_streaming: bool = True
     supports_functions: bool = False
     supports_vision: bool = False
     
-    # Quality scores (0-10)
     reasoning_quality: int = 5
     creative_quality: int = 5
     code_quality: int = 5
     speed_score: int = 5
     
-    # Availability
     is_local: bool = False
     requires_internet: bool = True
     max_concurrent: int = 10
@@ -68,10 +63,8 @@ class LLMManager:
         self.clients: Dict[str, Any] = {}
         self.usage_stats: Dict[str, Dict[str, Any]] = {}
         
-        # Circuit breaker state
         self.circuit_breakers: Dict[str, Dict[str, Any]] = {}
         
-        # Budget tracking (NEW)
         self.daily_spend: float = 0.0
         self.last_reset_date: date = datetime.now().date()
         self.request_count: int = 0
@@ -164,21 +157,17 @@ class LLMManager:
         """
         self._reset_daily_budget_if_needed()
         
-        # Free models always pass
         if estimated_cost == 0:
             return True, None
         
-        # Check per-request budget
         per_request_budget = float(os.getenv("LLM_MAX_COST_PER_REQUEST", "0.05"))
         if estimated_cost > per_request_budget:
             return False, f"Estimated cost ${estimated_cost:.4f} exceeds per-request limit ${per_request_budget:.2f}"
         
-        # Check daily budget
         daily_budget = float(os.getenv("LLM_DAILY_BUDGET", "5.00"))
         if self.daily_spend + estimated_cost > daily_budget:
             return False, f"Daily budget exceeded: ${self.daily_spend:.2f} + ${estimated_cost:.4f} > ${daily_budget:.2f}"
         
-        # Check if approaching budget (80% threshold)
         warn_threshold = float(os.getenv("LLM_WARN_AT_PERCENT", "80")) / 100
         if (self.daily_spend + estimated_cost) / daily_budget >= warn_threshold and self.budget_warnings_sent == 0:
             self.budget_warnings_sent += 1
@@ -205,17 +194,14 @@ class LLMManager:
         candidates = []
         
         for name, config in self.backends.items():
-            # Check if client is available
             if name not in self.clients:
                 logger.debug(f"Skipping {name} - client not initialized")
                 continue
             
-            # Check circuit breaker
             if self._is_circuit_open(name):
                 logger.debug(f"Skipping {name} - circuit breaker open")
                 continue
             
-            # Apply filters
             if prefer_local and not config.is_local:
                 continue
             
@@ -230,7 +216,6 @@ class LLMManager:
                 if "vision" in required_features and not config.supports_vision:
                     continue
             
-            # Calculate score
             score = self._calculate_backend_score(
                 config, task_type, complexity, prefer_fast
             )
@@ -241,7 +226,6 @@ class LLMManager:
             logger.warning("No suitable backends available")
             return None
         
-        # Sort by score (highest first)
         candidates.sort(key=lambda x: x[1], reverse=True)
         
         selected = candidates[0][0]
@@ -271,7 +255,6 @@ class LLMManager:
         task_metadata = task_metadata or {}
         score = 0.0
         
-        # 1. Base quality score (HIGHER WEIGHT for better quality)
         quality_weight = 5.0  # Increased from 3.0
         
         if task_type == "creative":
@@ -286,7 +269,6 @@ class LLMManager:
         
         score += base_quality
         
-        # 2. High-stakes bonus for premium models (NEW)
         if task_metadata.get("is_high_stakes", False):
             if config.reasoning_quality >= 9:  # Premium models (GPT-4, Claude)
                 score += 20
@@ -296,7 +278,6 @@ class LLMManager:
             else:  # Lower quality models
                 score -= 10  # Penalty for using weak models on important tasks
         
-        # 3. Speed consideration with context
         needs_speed = task_metadata.get("needs_speed", False)
         prefer_fast_env = os.getenv("LLM_PREFER_FAST", "true").lower() == "true"
         
@@ -308,9 +289,7 @@ class LLMManager:
             elif config.avg_latency_ms > 8000:  # Slow
                 score -= 10
         
-        # 4. Complexity matching (NEW - better logic)
         if complexity == TaskComplexity.SIMPLE:
-            # Simple tasks don't need premium models - reward efficient choices
             if config.reasoning_quality >= 9:
                 score -= 8  # Penalty for overkill (save budget)
             elif config.reasoning_quality >= 7:
@@ -319,19 +298,16 @@ class LLMManager:
                 score += 10  # Reward cheap models for simple tasks
         
         elif complexity == TaskComplexity.MEDIUM:
-            # Medium tasks benefit from good models
             if config.reasoning_quality >= 7:
                 score += 8
         
         elif complexity == TaskComplexity.COMPLEX:
-            # Complex tasks need good models
             if config.reasoning_quality >= 8:
                 score += 15
             elif config.reasoning_quality < 6:
                 score -= 15  # Penalty for weak models
         
         elif complexity == TaskComplexity.EXPERT:
-            # Expert tasks MUST use premium models
             if config.reasoning_quality >= 9:
                 score += 25
             elif config.reasoning_quality >= 7:
@@ -339,50 +315,39 @@ class LLMManager:
             else:
                 score -= 25  # Strong penalty for inadequate models
         
-        # 5. Cost consideration (FAIRER than before)
         if config.cost_per_1k_tokens == 0:
             score += 10  # Good bonus for free
         else:
-            # Scale cost penalty based on task importance
             cost_multiplier = 100
             
-            # Reduce penalty for high-stakes tasks (quality matters more)
             if task_metadata.get("is_high_stakes", False):
                 cost_multiplier = 50  # Less harsh penalty
             
-            # Check if within budget
             max_cost = float(os.getenv("LLM_MAX_COST_PER_REQUEST", "0.05"))
             
             if config.cost_per_1k_tokens <= max_cost:
-                # Within budget - reasonable penalty
                 score -= config.cost_per_1k_tokens * cost_multiplier
             else:
-                # Over budget - but don't make it impossible for important tasks
                 if task_metadata.get("is_high_stakes", False):
                     score -= 40  # Moderate penalty for high-stakes
                 else:
                     score -= 60  # Higher penalty for regular tasks
         
-        # 6. Word count consideration (NEW)
         word_estimate = task_metadata.get("word_count_estimate", 0)
         if word_estimate > 400:
-            # Long content - prefer models with better sustained quality
             if config.reasoning_quality >= 8:
                 score += 10
         
-        # 7. Local preference (ONLY if explicitly enabled)
         prefer_local = os.getenv("LLM_PREFER_LOCAL", "false").lower() == "true"
         if prefer_local and config.is_local:
             score += 12  # Bonus for local
         elif not prefer_local and not config.is_local:
             score += 3  # Small bonus for cloud (more reliable)
         
-        # 8. Priority from .env (OVERRIDE mechanism)
         priority_list = os.getenv("LLM_BACKEND_PRIORITY", "").split(",")
         if priority_list[0]:  # Check if not empty
             for idx, provider in enumerate(priority_list):
                 if config.provider.value == provider.strip():
-                    # First in list gets +20, second +10, third +5
                     priority_bonus = max(0, 20 - (idx * 10))
                     score += priority_bonus
                     logger.debug(f"Priority bonus (+{priority_bonus}) for {config.provider.value}")
@@ -425,10 +390,8 @@ class LLMManager:
                 "metadata": dict
             }
         """
-        # Increment request counter
         self.request_count += 1
         
-        # If specific backend requested, try only that one
         if backend:
             if backend not in self.clients:
                 available = [name for name in self.backends.keys() if name in self.clients]
@@ -437,7 +400,6 @@ class LLMManager:
                     f"Available backends: {available if available else 'None'}"
                 )
             
-            # Check budget before attempting
             config = self.backends[backend]
             estimated_cost = (max_tokens / 1000) * config.cost_per_1k_tokens
             within_budget, warning = self._check_budget(estimated_cost, config)
@@ -448,12 +410,10 @@ class LLMManager:
             if warning:
                 logger.warning(warning)
             
-            # Try the specific backend
             return await self._attempt_completion(
                 backend, prompt, max_tokens, temperature, **kwargs
             )
         
-        # Auto-select: get ranked list of all available backends
         candidates = self._rank_backends(task_type, complexity, kwargs)
         
         if not candidates:
@@ -481,12 +441,10 @@ class LLMManager:
                     f"task_type={task_type}, complexity={complexity}"
                 )
         
-        # Try each candidate backend until one succeeds (with budget checking)
         last_error = None
         
         for backend_name, score, config in candidates:
             try:
-                # Check budget before attempting
                 estimated_cost = (max_tokens / 1000) * config.cost_per_1k_tokens
                 within_budget, warning = self._check_budget(estimated_cost, config)
                 
@@ -510,10 +468,8 @@ class LLMManager:
                 logger.warning(f"Backend {backend_name} failed: {e}")
                 last_error = e
                 
-                # Continue to next backend
                 continue
         
-        # All backends failed
         tried_backends = [name for name, _, _ in candidates]
         raise Exception(
             f"All {len(tried_backends)} backends failed. "
@@ -543,17 +499,14 @@ class LLMManager:
         task_metadata = kwargs.get("task_metadata", {})  # NEW
         
         for name, config in self.backends.items():
-            # Check if client is available
             if name not in self.clients:
                 logger.debug(f"Skipping {name} - client not initialized")
                 continue
             
-            # Check circuit breaker
             if self._is_circuit_open(name):
                 logger.debug(f"Skipping {name} - circuit breaker open")
                 continue
             
-            # Apply filters
             if prefer_local and not config.is_local:
                 continue
             
@@ -568,17 +521,14 @@ class LLMManager:
                 if "vision" in required_features and not config.supports_vision:
                     continue
             
-            # Calculate score WITH task metadata
             score = self._calculate_backend_score(
                 config, task_type, complexity, prefer_fast, task_metadata
             )
             
             candidates.append((name, score, config))
         
-        # Sort by score (highest first)
         candidates.sort(key=lambda x: x[1], reverse=True)
         
-        # Log top 3 candidates
         if candidates:
             logger.info(f"Top backend candidates:")
             for idx, (name, score, config) in enumerate(candidates[:3], 1):
@@ -616,11 +566,9 @@ class LLMManager:
         config = self.backends[backend]
         client = self.clients[backend]
         
-        # Record start time
         start_time = time.time()
         
         try:
-            # Call appropriate backend
             if config.provider == LLMProvider.OLLAMA:
                 result = await self._call_ollama(
                     client, config, prompt, max_tokens, temperature, **kwargs
@@ -644,12 +592,10 @@ class LLMManager:
             else:
                 raise Exception(f"Provider {config.provider.value} not implemented")
             
-            # Calculate metrics
             latency_ms = int((time.time() - start_time) * 1000)
             tokens_used = result.get("tokens_used", 0)
             cost = (tokens_used / 1000) * config.cost_per_1k_tokens
             
-            # Record success and update daily spend
             self._record_success(backend, latency_ms, tokens_used, cost)
             self.daily_spend += cost
             
@@ -665,10 +611,8 @@ class LLMManager:
             }
         
         except Exception as e:
-            # Record failure
             self._record_failure(backend)
             
-            # Re-raise to allow fallback to next backend
             raise Exception(f"Backend {backend} failed: {e}") from e
     
     
@@ -753,7 +697,6 @@ class LLMManager:
         
         cb = self.circuit_breakers[backend]
         
-        # Check if enough time has passed to retry
         if time.time() - cb["opened_at"] > cb["timeout"]:
             logger.info(f"Circuit breaker half-open for {backend}, allowing retry")
             return False
@@ -779,13 +722,11 @@ class LLMManager:
         stats["total_tokens"] += tokens
         stats["total_cost"] += cost
         
-        # Update rolling average latency
         n = stats["successful_requests"]
         stats["avg_latency_ms"] = (
             stats["avg_latency_ms"] * (n - 1) + latency_ms
         ) / n
         
-        # Reset circuit breaker on success
         if backend in self.circuit_breakers:
             self.circuit_breakers[backend]["consecutive_failures"] = 0
             self.circuit_breakers[backend]["is_open"] = False
@@ -807,7 +748,6 @@ class LLMManager:
         stats["total_requests"] += 1
         stats["failed_requests"] += 1
         
-        # Update circuit breaker
         if backend not in self.circuit_breakers:
             self.circuit_breakers[backend] = {
                 "consecutive_failures": 0,
@@ -819,7 +759,6 @@ class LLMManager:
         cb = self.circuit_breakers[backend]
         cb["consecutive_failures"] += 1
         
-        # Open circuit after 3 consecutive failures
         if cb["consecutive_failures"] >= 3 and not cb["is_open"]:
             cb["is_open"] = True
             cb["opened_at"] = time.time()

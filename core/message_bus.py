@@ -1,4 +1,3 @@
-# C:\Users\MohammedZaid\Desktop\agentic-ai-system\core\message_bus.py
 
 import asyncio
 import uuid
@@ -44,16 +43,12 @@ class MessageBus:
     """
     
     def __init__(self):
-        # Topic subscriptions: {topic: {agent_id: callback}}
         self._subscriptions: Dict[str, Dict[str, Callable]] = {}
         
-        # Message queues for each agent: {agent_id: asyncio.Queue}
         self._agent_queues: Dict[str, asyncio.Queue] = {}
         
-        # Active agent processing tasks
         self._agent_tasks: Dict[str, asyncio.Task] = {}
         
-        # Message history for debugging (limited size)
         self._message_history: List[Message] = []
         self._max_history = 100
         
@@ -74,10 +69,8 @@ class MessageBus:
         
         self._subscriptions[topic][agent_id] = callback
         
-        # Create queue for this agent if it doesn't exist
         if agent_id not in self._agent_queues:
             self._agent_queues[agent_id] = asyncio.Queue()
-            # Start processing messages for this agent
             self._agent_tasks[agent_id] = asyncio.create_task(
                 self._process_agent_queue(agent_id)
             )
@@ -106,23 +99,18 @@ class MessageBus:
             f"To: {message.recipient or 'broadcast'}"
         )
         
-        # Add to history
         self._add_to_history(message)
         
-        # Get subscribers for this topic
         subscribers = self._subscriptions.get(message.topic, {})
         
         if not subscribers:
             logger.warning(f"No subscribers for topic '{message.topic}'")
             return
         
-        # Deliver to specific recipient or broadcast
         for agent_id, callback in subscribers.items():
-            # Skip if message has specific recipient and this isn't it
             if message.recipient and message.recipient != agent_id:
                 continue
             
-            # Add message to agent's queue
             await self._agent_queues[agent_id].put((message, callback))
             logger.debug(f"Message queued for agent '{agent_id}'")
     
@@ -136,10 +124,8 @@ class MessageBus:
         
         while True:
             try:
-                # Wait for next message
                 message, callback = await queue.get()
                 
-                # Process the message
                 try:
                     await callback(message)
                     logger.debug(f"Agent '{agent_id}' processed message {message.id}")
@@ -148,7 +134,6 @@ class MessageBus:
                         f"Error processing message in agent '{agent_id}': {e}",
                         exc_info=True
                     )
-                    # Publish error message
                     error_msg = Message(
                         type="error",
                         sender="message_bus",
@@ -161,7 +146,6 @@ class MessageBus:
                     )
                     await self.publish(error_msg)
                 
-                # Mark task as done
                 queue.task_done()
                 
             except asyncio.CancelledError:
@@ -190,7 +174,6 @@ class MessageBus:
         """Gracefully shutdown the message bus"""
         logger.info("Shutting down MessageBus...")
         
-        # Cancel all agent tasks
         for agent_id, task in self._agent_tasks.items():
             task.cancel()
             try:

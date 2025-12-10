@@ -1,4 +1,3 @@
-# C:\Users\MohammedZaid\Desktop\agentic-ai-system\agents\post_design_agent.py
 import asyncio
 import re
 from typing import Dict, Any, Optional, List, Tuple
@@ -90,11 +89,9 @@ class PostDesignAgent(BaseAgent):
         logger.info(f"PostDesign Agent processing: '{user_message}'")
         
         try:
-            # Enhanced content analysis
             content_type = self._detect_content_type(user_message)
             tone = self._detect_tone(user_message)
             
-            # NEW: Extract task metadata for smarter model selection
             task_type, task_metadata = self._classify_task_type(user_message, content_type)
             complexity = self._assess_complexity(user_message, content_type, task_metadata)
             
@@ -199,17 +196,14 @@ class PostDesignAgent(BaseAgent):
             tone
         )
         
-        # Check for explicit model preference
         model_preference = self._extract_model_preference(user_message)
         
-        # Prepare kwargs for LLM manager
         llm_kwargs = {
             "prefer_local": model_preference == "free",
             "prefer_fast": task_metadata.get("needs_speed", False) or model_preference == "speed",
             "task_metadata": task_metadata
         }
         
-        # Override for quality preference
         if model_preference == "quality":
             llm_kwargs["max_cost"] = 0.10  # Allow expensive models
             llm_kwargs["prefer_fast"] = False
@@ -258,7 +252,6 @@ class PostDesignAgent(BaseAgent):
         except Exception as e:
             logger.error(f"LLM generation failed: {e}", exc_info=True)
             
-            # Fallback to mock
             content = self._generate_mock_design(user_message, content_type, tone)
             metadata = {
                 "backend_used": "mock",
@@ -286,7 +279,6 @@ class PostDesignAgent(BaseAgent):
     ) -> str:
         """Build comprehensive prompt based on content type and tone"""
         
-        # Platform-specific guidelines
         platform_guides = {
             "linkedin": {
                 "format": "Professional post with 2-4 paragraphs",
@@ -346,7 +338,6 @@ class PostDesignAgent(BaseAgent):
             }
         }
         
-        # Tone-specific instructions
         tone_guides = {
             "professional": "Maintain formal language, industry terminology, authoritative voice",
             "casual": "Conversational, friendly, relatable, like talking to a friend",
@@ -361,7 +352,6 @@ class PostDesignAgent(BaseAgent):
         guide = platform_guides.get(content_type, platform_guides["social_media"])
         tone_instruction = tone_guides.get(tone, tone_guides["professional"])
         
-        # Build the comprehensive prompt
         base_prompt = f"""You are an expert marketing and sales copywriter with 10+ years of experience creating high-converting content across all platforms.
 
 USER REQUEST: "{user_message}"
@@ -425,7 +415,6 @@ GENERATE THE CONTENT NOW:"""
         """
         message_lower = user_message.lower()
         
-        # Determine if this is high-stakes content
         high_stakes_keywords = [
             "important", "urgent", "campaign", "launch", "announcement",
             "pitch", "proposal", "presentation", "keynote", "investor",
@@ -433,11 +422,9 @@ GENERATE THE CONTENT NOW:"""
         ]
         is_high_stakes = any(word in message_lower for word in high_stakes_keywords)
         
-        # Determine if speed matters
         speed_keywords = ["quick", "fast", "asap", "urgent", "now", "immediately", "hurry"]
         needs_speed = any(word in message_lower for word in speed_keywords)
         
-        # Estimate word count based on content type
         word_count_estimates = {
             "twitter": 50,
             "instagram": 150,
@@ -453,7 +440,6 @@ GENERATE THE CONTENT NOW:"""
         
         estimated_words = word_count_estimates.get(content_type, 150)
         
-        # Build metadata
         task_metadata = {
             "is_high_stakes": is_high_stakes,
             "needs_speed": needs_speed,
@@ -462,7 +448,6 @@ GENERATE THE CONTENT NOW:"""
             "content_type": content_type
         }
         
-        # Determine task type based on content
         if content_type in ["blog", "article", "email", "sales_pitch", "linkedin"]:
             task_type = "reasoning"  # Strategic content needs reasoning
         elif content_type in ["ad_copy", "product_description"]:
@@ -470,7 +455,6 @@ GENERATE THE CONTENT NOW:"""
         elif content_type in ["instagram", "twitter", "facebook"]:
             task_type = "creative"  # Social posts are creative
         else:
-            # Check message for creative vs analytical
             creative_keywords = ["story", "engaging", "creative", "fun", "exciting", "emotional"]
             analytical_keywords = ["analyze", "data", "statistics", "trends", "insights", "report"]
             
@@ -481,7 +465,6 @@ GENERATE THE CONTENT NOW:"""
             else:
                 task_type = "creative"  # Default for marketing
         
-        # Override task type for high-stakes content
         if is_high_stakes and task_type == "creative":
             task_type = "reasoning"  # High-stakes needs better reasoning
             logger.info("Upgraded task type to 'reasoning' due to high-stakes flag")
@@ -497,28 +480,23 @@ GENERATE THE CONTENT NOW:"""
     ) -> TaskComplexity:
         """Enhanced complexity assessment using metadata"""
         
-        # High-stakes content always uses better models
         if task_metadata.get("is_high_stakes"):
             logger.info("Complexity set to COMPLEX due to high-stakes flag")
             return TaskComplexity.COMPLEX
         
-        # Long-form content needs more sophistication
         word_estimate = task_metadata.get("word_count_estimate", 0)
         if word_estimate > 300:
             return TaskComplexity.COMPLEX
         elif word_estimate > 200:
             return TaskComplexity.MEDIUM
         
-        # Content type specific complexity
         if content_type in ["sales_pitch", "blog", "email"]:
             return TaskComplexity.COMPLEX
         elif content_type in ["ad_copy", "linkedin", "product_description"]:
             return TaskComplexity.MEDIUM
         elif content_type in ["twitter", "instagram"]:
-            # Social can be simple unless high-stakes
             return TaskComplexity.SIMPLE
         
-        # Check prompt detail level
         word_count = len(user_message.split())
         
         if word_count < 5:
@@ -550,7 +528,6 @@ Key insight #3: [Actionable advice]
 
 What's your experience with this? Drop your thoughts below!
 
-#Professional #CareerGrowth #Leadership #Industry""",
 
             "instagram": """Let's talk about {topic}! ✨
 
@@ -565,7 +542,6 @@ Tag someone who needs to see this! 👇
 
 Save this for later! 📌
 
-#Inspo #Motivation #LifeHacks #Trending""",
 
             "twitter": """Hot take on {topic}:
 
@@ -577,7 +553,6 @@ Here's why:
 
 Thoughts? 🤔
 
-#Twitter #Trending""",
 
             "email": """Subject: You'll want to see this about {topic}
 
@@ -634,10 +609,8 @@ Point one
 Point two
 Point three
 
-#Marketing #Content
 """))
         
-        # Extract topic from user message
         topic = user_message[:50] + ("..." if len(user_message) > 50 else "")
         
         content = template.format(topic=topic)

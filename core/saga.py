@@ -1,4 +1,3 @@
-# core/saga.py
 import asyncio
 import uuid
 import logging
@@ -74,17 +73,14 @@ class Saga:
         self.steps = steps
         self.message_bus = message_bus
         
-        # State tracking
         self.status = SagaStatus.PENDING
         self.current_step_index = 0
         self.step_results: Dict[str, SagaStepResult] = {}
         self.all_results: Dict[str, Any] = {}
         
-        # Timing
         self.started_at: Optional[datetime] = None
         self.completed_at: Optional[datetime] = None
         
-        # Response handlers
         self._response_futures: Dict[str, asyncio.Future] = {}
     
     
@@ -107,7 +103,6 @@ class Saga:
         logger.info(f"Saga '{self.name}' ({self.saga_id}) starting execution")
         
         try:
-            # Execute each step
             for index, step in enumerate(self.steps):
                 self.current_step_index = index
                 
@@ -115,20 +110,16 @@ class Saga:
                     f"Saga {self.saga_id}: Executing step {index + 1}/{len(self.steps)} - {step.name}"
                 )
                 
-                # Execute this step (with retries)
                 step_result = await self._execute_step_with_retry(step)
                 
-                # Store result
                 self.step_results[step.name] = step_result
                 
                 if step_result.status == StepStatus.COMPLETED:
                     self.all_results[step.name] = step_result.result
                     logger.info(f"Saga {self.saga_id}: Step '{step.name}' completed")
                 else:
-                    # Step failed
                     raise Exception(f"Step '{step.name}' failed: {step_result.error}")
             
-            # All steps completed successfully
             self.status = SagaStatus.COMPLETED
             self.completed_at = datetime.now()
             
@@ -150,7 +141,6 @@ class Saga:
             self.status = SagaStatus.FAILED
             self.completed_at = datetime.now()
             
-            # Automatic compensation (rollback)
             await self._compensate()
             
             duration_ms = int((self.completed_at - self.started_at).total_seconds() * 1000)
@@ -181,7 +171,6 @@ class Saga:
                 
                 step_response = await self._execute_step(step)
                 
-                # Success
                 result.status = StepStatus.COMPLETED
                 result.result = step_response
                 result.completed_at = datetime.now()
@@ -193,7 +182,6 @@ class Saga:
                 result.error = str(e)
                 
                 if attempt >= step.max_retries:
-                    # Final attempt failed
                     result.status = StepStatus.FAILED
                     result.completed_at = datetime.now()
                     result.retries = attempt
@@ -205,20 +193,16 @@ class Saga:
     async def _execute_step(self, step: SagaStep) -> Dict[str, Any]:
         """Execute a single saga step"""
         
-        # Build payload using previous results
         try:
             payload = step.build_payload(self.all_results)
         except Exception as e:
             raise Exception(f"Failed to build payload for step '{step.name}': {e}")
         
-        # Create unique correlation ID for this step
         correlation_id = f"{self.saga_id}_step_{step.name}_{uuid.uuid4().hex[:8]}"
         
-        # Create future for response
         response_future = asyncio.Future()
         self._response_futures[correlation_id] = response_future
         
-        # Subscribe to response topic (temporary)
         async def response_handler(message: Message):
             if message.correlation_id == correlation_id:
                 if not response_future.done():
@@ -231,7 +215,6 @@ class Saga:
         )
         
         try:
-            # Send request
             await self.message_bus.publish(Message(
                 type="request",
                 sender=f"saga_{self.saga_id}",
@@ -241,7 +224,6 @@ class Saga:
                 correlation_id=correlation_id
             ))
             
-            # Wait for response with timeout
             response = await asyncio.wait_for(
                 response_future,
                 timeout=step.timeout
@@ -256,7 +238,6 @@ class Saga:
             raise Exception(f"Step '{step.name}' failed: {e}")
         
         finally:
-            # Cleanup
             self.message_bus.unsubscribe(
                 topic=step.response_topic,
                 agent_id=f"saga_{self.saga_id}_{step.name}"
@@ -276,7 +257,6 @@ class Saga:
         logger.warning(f"Saga {self.saga_id}: Starting compensation (rollback)")
         self.status = SagaStatus.COMPENSATING
         
-        # Get completed steps in reverse order
         completed_steps = [
             step for step in self.steps[:self.current_step_index + 1]
             if step.name in self.all_results and step.compensate is not None
@@ -286,10 +266,8 @@ class Saga:
             try:
                 logger.info(f"Saga {self.saga_id}: Compensating step '{step.name}'")
                 
-                # Execute compensation
                 await step.compensate(self.message_bus, self.all_results)
                 
-                # Update step status
                 if step.name in self.step_results:
                     self.step_results[step.name].status = StepStatus.COMPENSATED
                 
@@ -357,7 +335,6 @@ class SagaCoordinator:
         if not saga_id:
             saga_id = str(uuid.uuid4())
         
-        # Create saga
         saga = Saga(
             saga_id=saga_id,
             name=name,
@@ -365,14 +342,11 @@ class SagaCoordinator:
             message_bus=self.message_bus
         )
         
-        # Track it
         self.active_sagas[saga_id] = saga
         
         try:
-            # Execute
             result = await saga.execute()
             
-            # Move to completed
             self.completed_sagas[saga_id] = saga
             if saga_id in self.active_sagas:
                 del self.active_sagas[saga_id]
@@ -382,7 +356,6 @@ class SagaCoordinator:
         except Exception as e:
             logger.error(f"Saga coordinator error: {e}")
             
-            # Still track as completed (failed)
             self.completed_sagas[saga_id] = saga
             if saga_id in self.active_sagas:
                 del self.active_sagas[saga_id]

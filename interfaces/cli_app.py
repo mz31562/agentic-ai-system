@@ -1,4 +1,3 @@
-# C:\Users\MohammedZaid\Desktop\agentic-ai-system\interfaces\cli_app.py
 import asyncio
 import os
 import sys
@@ -8,41 +7,29 @@ from pathlib import Path
 from datetime import datetime
 from typing import Optional
 
-# Add project root to path
 project_root = str(Path(__file__).parent.parent)
 sys.path.insert(0, project_root)
 
 from dotenv import load_dotenv
 load_dotenv()
 
-# ============================================================================
-# LOGGING SETUP - Configure BEFORE importing other modules
-# ============================================================================
 
-# Check if debug mode is enabled
 DEBUG_MODE = os.getenv("DEBUG_MODE", "false").lower() == "true"
 
-# Create logs directory
 log_dir = Path("logs")
 log_dir.mkdir(exist_ok=True)
 
-# Create log file with timestamp
 log_file = log_dir / f"system_{datetime.now().strftime('%Y%m%d')}.log"
 
-# Configure logging
 if DEBUG_MODE:
-    # Debug mode: Show everything in console
     console_level = logging.DEBUG
     console_format = '%(levelname)-8s | %(name)-25s | %(message)s'
 else:
-    # Normal mode: Only show warnings/errors in console
     console_level = logging.WARNING
     console_format = '%(message)s'
 
-# File logging (always detailed)
 file_format = '%(asctime)s | %(levelname)-8s | %(name)-25s | %(message)s'
 
-# Setup root logger
 logging.basicConfig(
     level=logging.DEBUG,  # Capture everything
     format=file_format,
@@ -52,18 +39,14 @@ logging.basicConfig(
     ]
 )
 
-# Configure console handler separately
 root_logger = logging.getLogger()
 if not DEBUG_MODE:
-    # Remove default handlers and add custom ones
     root_logger.handlers.clear()
     
-    # File handler (detailed)
     file_handler = logging.FileHandler(log_file, encoding='utf-8')
     file_handler.setLevel(logging.DEBUG)
     file_handler.setFormatter(logging.Formatter(file_format, datefmt='%Y-%m-%d %H:%M:%S'))
     
-    # Console handler (minimal)
     console_handler = logging.StreamHandler(sys.stdout)
     console_handler.setLevel(console_level)
     console_handler.setFormatter(logging.Formatter(console_format))
@@ -71,13 +54,11 @@ if not DEBUG_MODE:
     root_logger.addHandler(file_handler)
     root_logger.addHandler(console_handler)
 
-# Silence noisy libraries
 logging.getLogger('httpx').setLevel(logging.WARNING)
 logging.getLogger('httpcore').setLevel(logging.WARNING)
 logging.getLogger('urllib3').setLevel(logging.WARNING)
 logging.getLogger('requests').setLevel(logging.WARNING)
 
-# Now import other modules (they'll use the configured logging)
 from core.message_bus import MessageBus, Message
 from agents.host_agent import HostAgent
 from agents.post_design_agent import PostDesignAgent
@@ -109,7 +90,6 @@ class CLIApp:
         print("AGENTIC AI SYSTEM - CLI Interface")
         print("="*70 + "\n")
         
-        # Show log file location
         if not self.debug_mode:
             print(f"📝 Detailed logs: {self.log_file}")
             print(f"💡 Enable DEBUG_MODE=true in .env for verbose output\n")
@@ -119,7 +99,6 @@ class CLIApp:
         
         print("Starting system...")
         
-        # Create message bus FIRST
         self.message_bus = MessageBus()
         
         image_backend = os.getenv("IMAGE_BACKEND", "comfyui")
@@ -141,7 +120,6 @@ class CLIApp:
         print("\nInitializing LLM backends...")
         self.llm_manager = create_llm_manager()
         
-        # Show available backends
         stats = self.llm_manager.get_stats()
         available_backends = [name for name, info in stats["backends"].items() 
                              if info["available"]]
@@ -169,7 +147,6 @@ class CLIApp:
             print("   System will run in MOCK mode")
             print("   Enable backends in .env file")
         
-        # Configure image backend
         image_config = {
             "backend": os.getenv("IMAGE_BACKEND", "comfyui"),
             "model": os.getenv("IMAGE_MODEL", "sdxl"),
@@ -178,7 +155,6 @@ class CLIApp:
             "comfyui_url": os.getenv("COMFYUI_URL", "http://127.0.0.1:8188")
         }
         
-        # Create agents
         self.host_agent = HostAgent(self.message_bus)
         self.post_design_agent = PostDesignAgent(
             self.message_bus,
@@ -189,14 +165,12 @@ class CLIApp:
             image_config=image_config
         )
         
-        # Subscribe to user responses
         self.message_bus.subscribe(
             topic="user_response",
             agent_id="cli_app",
             callback=self.handle_response
         )
         
-        # Start all agents
         await self.host_agent.start()
         await self.post_design_agent.start()
         await self.image_generation_agent.start()
@@ -250,14 +224,11 @@ class CLIApp:
         
         await self.message_bus.publish(message)
         
-        # Clean progress indicator
         print("\n🔄 Processing your request...\n")
         
-        # Simple spinner animation
         spinner = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
         spinner_idx = 0
         
-        # Wait up to 5 minutes for response
         for i in range(600):  # 600 * 0.5 = 300 seconds
             await asyncio.sleep(0.5)
             
@@ -266,14 +237,12 @@ class CLIApp:
                 print()
                 break
             
-            # Show spinner (only in non-debug mode)
             if not self.debug_mode:
                 if i % 2 == 0:  # Update every second
                     elapsed = i * 0.5
                     print(f"\r{spinner[spinner_idx]} Processing... ({elapsed:.0f}s)", end="", flush=True)
                     spinner_idx = (spinner_idx + 1) % len(spinner)
             
-            # Show saga progress every 30 seconds
             if i > 0 and i % 60 == 0:
                 if not self.debug_mode:
                     print()  # New line after spinner
@@ -284,12 +253,10 @@ class CLIApp:
                         for saga in active_sagas:
                             print(f"   📋 {saga['name']}: Step {saga['current_step']}/{saga['total_steps']}")
         else:
-            # Timeout
             if not self.debug_mode:
                 print("\r✗ Timeout            ", flush=True)
             print()
         
-        # Display responses
         if self.response_queue:
             while self.response_queue:
                 response = self.response_queue.pop(0)
@@ -309,7 +276,6 @@ class CLIApp:
         print("📊 SYSTEM STATUS")
         print("="*70 + "\n")
         
-        # LLM Manager Stats
         if self.llm_manager:
             print(f"🤖 LLM Manager:")
             stats = self.llm_manager.get_stats()
@@ -318,7 +284,6 @@ class CLIApp:
             print(f"   Total Backends: {len(stats['backends'])}")
             print(f"   Available: {available_count}")
             
-            # Budget status
             budget = stats.get("budget", {})
             if budget:
                 daily_spend = budget.get("daily_spend", 0)
@@ -358,7 +323,6 @@ class CLIApp:
             
             print()
         
-        # Host Agent
         if self.host_agent:
             host_status = self.host_agent.get_status()
             print(f"🎯 Host Agent:")
@@ -366,7 +330,6 @@ class CLIApp:
             print(f"   Running: {'✓' if host_status['is_running'] else '✗'}")
             print(f"   Processed: {host_status['processed_count']} messages\n")
         
-        # PostDesign Agent
         if self.post_design_agent:
             design_status = self.post_design_agent.get_status()
             print(f"✏️  PostDesign Agent:")
@@ -374,7 +337,6 @@ class CLIApp:
             print(f"   Running: {'✓' if design_status['is_running'] else '✗'}")
             print(f"   Processed: {design_status['processed_count']} messages\n")
         
-        # Image Generation Agent
         if self.image_generation_agent:
             image_status = self.image_generation_agent.get_status()
             print(f"🖼️  Image Generation Agent:")
@@ -382,7 +344,6 @@ class CLIApp:
             print(f"   Running: {'✓' if image_status['is_running'] else '✗'}")
             print(f"   Processed: {image_status['processed_count']} messages\n")
         
-        # Active Requests
         if self.host_agent:
             active = self.host_agent.get_active_requests_summary()
             print(f"📝 Active Requests: {active['total_active']}")
@@ -394,7 +355,6 @@ class CLIApp:
             
             print()
         
-        # Saga Status
         if self.host_agent and hasattr(self.host_agent, 'saga_coordinator'):
             saga_summary = self.host_agent.get_saga_status_summary()
             active_sagas = saga_summary.get('active_sagas', 0)
@@ -504,12 +464,10 @@ class CLIApp:
         """Toggle debug mode"""
         self.debug_mode = not self.debug_mode
         
-        # Reconfigure logging
         root_logger = logging.getLogger()
         root_logger.handlers.clear()
         
         if self.debug_mode:
-            # Debug mode: verbose console
             console_handler = logging.StreamHandler(sys.stdout)
             console_handler.setLevel(logging.DEBUG)
             console_handler.setFormatter(logging.Formatter(
@@ -518,14 +476,12 @@ class CLIApp:
             root_logger.addHandler(console_handler)
             print("\n🐛 Debug mode ENABLED - Verbose logging active\n")
         else:
-            # Normal mode: minimal console
             console_handler = logging.StreamHandler(sys.stdout)
             console_handler.setLevel(logging.WARNING)
             console_handler.setFormatter(logging.Formatter('%(message)s'))
             root_logger.addHandler(console_handler)
             print("\n✓ Debug mode DISABLED - Clean output\n")
         
-        # Always keep file handler
         file_handler = logging.FileHandler(self.log_file, encoding='utf-8')
         file_handler.setLevel(logging.DEBUG)
         file_handler.setFormatter(logging.Formatter(
@@ -538,20 +494,17 @@ class CLIApp:
     async def run(self):
         """Main application loop"""
         try:
-            # Initialize system
             init_result = await self.initialize()
             if init_result == False:
                 return
             
             while self.running and not self.shutdown_in_progress:
                 try:
-                    # Get user input
                     user_input = input("You: ").strip()
                     
                     if not user_input:
                         continue
                     
-                    # Handle commands
                     if user_input.startswith("/"):
                         command = user_input.lower()
                         
@@ -584,7 +537,6 @@ class CLIApp:
                             print("Type /help for available commands\n")
                     
                     else:
-                        # Regular message
                         await self.send_message(user_input)
                 
                 except KeyboardInterrupt:
@@ -593,7 +545,6 @@ class CLIApp:
                     break
                 
                 except EOFError:
-                    # Handle Ctrl+D or Ctrl+Z
                     print("\n\n👋 EOF detected. Shutting down...\n")
                     self.running = False
                     break
@@ -608,7 +559,6 @@ class CLIApp:
             print("\n\n⚠ Keyboard interrupt. Shutting down...\n")
         
         finally:
-            # Cleanup
             await self.shutdown()
     
     
@@ -621,7 +571,6 @@ class CLIApp:
         print("Stopping agents...")
         
         try:
-            # Stop all agents with timeout
             shutdown_tasks = []
             
             if self.host_agent:
@@ -631,7 +580,6 @@ class CLIApp:
             if self.image_generation_agent:
                 shutdown_tasks.append(self.image_generation_agent.stop())
             
-            # Wait for all agents to stop with timeout
             if shutdown_tasks:
                 try:
                     await asyncio.wait_for(
@@ -641,7 +589,6 @@ class CLIApp:
                 except asyncio.TimeoutError:
                     print("⚠ Some agents took too long to stop")
             
-            # Shutdown message bus
             if self.message_bus:
                 try:
                     await asyncio.wait_for(self.message_bus.shutdown(), timeout=2.0)
@@ -658,13 +605,11 @@ def main():
     """Main entry point with signal handling"""
     app = CLIApp()
     
-    # Handle Ctrl+C gracefully
     def signal_handler(sig, frame):
         print("\n\n👋 Signal received. Shutting down gracefully...\n")
         app.running = False
         app.shutdown_in_progress = True
     
-    # Register signal handlers (Unix/Linux/Mac)
     if hasattr(signal, 'SIGINT'):
         signal.signal(signal.SIGINT, signal_handler)
     if hasattr(signal, 'SIGTERM'):

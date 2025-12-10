@@ -1,4 +1,3 @@
-# C:\Users\MohammedZaid\Desktop\agentic-ai-system\agents\image_generation_agent.py
 import asyncio
 import os
 import json
@@ -48,7 +47,6 @@ class ImageGenerationAgent(BaseAgent):
             ]
         )
         
-        # Default config - merge with provided config
         default_config = {
             "backend": os.getenv("IMAGE_BACKEND", "comfyui"),
             "model": os.getenv("IMAGE_MODEL", "sdxl"),
@@ -58,13 +56,11 @@ class ImageGenerationAgent(BaseAgent):
             "default_size": os.getenv("DEFAULT_IMAGE_SIZE", "1024x1024"),
             "default_style": os.getenv("DEFAULT_IMAGE_STYLE", "vivid"),
             
-            # Robustness settings
             "max_retries": int(os.getenv("IMAGE_MAX_RETRIES", "3")),
             "timeout_seconds": int(os.getenv("IMAGE_TIMEOUT_SECONDS", "600")),
             "enable_fallback": os.getenv("IMAGE_ENABLE_FALLBACK", "true").lower() == "true",
             "check_interval_seconds": 2,
             
-            # Text-in-image settings
             "enable_text_optimization": os.getenv("ENABLE_TEXT_OPTIMIZATION", "true").lower() == "true",
             "text_detection_keywords": ["text that says", "text:", "words:", "letters:", "sign that says"]
         }
@@ -77,21 +73,17 @@ class ImageGenerationAgent(BaseAgent):
         self.model = self.image_config["model"]
         self.output_dir = Path(self.image_config["output_dir"])
         
-        # Create output directory
         self.output_dir.mkdir(parents=True, exist_ok=True)
         
-        # Track failures and generations
         self.consecutive_failures = 0
         self.max_consecutive_failures = 3
         self.circuit_open = False
         self.generation_count = 0
         self.last_successful_generation = None
         
-        # ComfyUI available samplers cache
         self.available_samplers = None
         self.available_schedulers = None
         
-        # Initialize the appropriate client
         self.client = None
         self._initialize_backend()
     
@@ -140,7 +132,6 @@ class ImageGenerationAgent(BaseAgent):
                 "requests": requests
             }
             
-            # Test connection
             response = requests.get(
                 f"{comfyui_url}/system_stats", 
                 timeout=5
@@ -150,7 +141,6 @@ class ImageGenerationAgent(BaseAgent):
                 logger.info(f"ComfyUI initialized at {comfyui_url}")
                 self.consecutive_failures = 0
                 
-                # Fetch available samplers and schedulers
                 self._fetch_available_samplers()
             else:
                 raise Exception(f"ComfyUI returned status {response.status_code}")
@@ -165,7 +155,6 @@ class ImageGenerationAgent(BaseAgent):
         try:
             import requests
             
-            # Get object info which contains sampler names
             response = requests.get(
                 f"{self.client['url']}/object_info",
                 timeout=5
@@ -174,7 +163,6 @@ class ImageGenerationAgent(BaseAgent):
             if response.status_code == 200:
                 object_info = response.json()
                 
-                # Extract samplers from KSampler node
                 if "KSampler" in object_info:
                     sampler_info = object_info["KSampler"]["input"]["required"]
                     
@@ -203,30 +191,24 @@ class ImageGenerationAgent(BaseAgent):
         Returns:
             Safe sampler name
         """
-        # If we don't have the list, use safe defaults
         if not self.available_samplers:
-            # Most common samplers that should exist
             safe_defaults = ["euler", "dpmpp_2m", "dpmpp_sde", "ddim"]
             logger.info(f"Using safe default sampler: {safe_defaults[0]}")
             return safe_defaults[0]
         
-        # Check if preferred sampler exists
         if preferred in self.available_samplers:
             return preferred
         
-        # Text-optimized fallback order
         if is_text:
             text_samplers = ["euler", "dpmpp_2m", "dpmpp_sde", "ddim", "dpmpp_2m_sde"]
         else:
             text_samplers = ["dpmpp_2m", "euler", "dpmpp_sde", "ddim"]
         
-        # Find first available
         for sampler in text_samplers:
             if sampler in self.available_samplers:
                 logger.info(f"Sampler '{preferred}' not available, using '{sampler}'")
                 return sampler
         
-        # Last resort - use first available
         fallback = self.available_samplers[0]
         logger.warning(f"Using fallback sampler: {fallback}")
         return fallback
@@ -235,7 +217,6 @@ class ImageGenerationAgent(BaseAgent):
     def _get_safe_scheduler(self, preferred: str) -> str:
         """Get a safe scheduler name that exists in ComfyUI"""
         if not self.available_schedulers:
-            # Most common schedulers
             safe_defaults = ["normal", "karras", "simple"]
             logger.info(f"Using safe default scheduler: {safe_defaults[0]}")
             return safe_defaults[0]
@@ -243,7 +224,6 @@ class ImageGenerationAgent(BaseAgent):
         if preferred in self.available_schedulers:
             return preferred
         
-        # Fallback order
         fallback_order = ["normal", "karras", "simple", "exponential"]
         
         for scheduler in fallback_order:
@@ -251,7 +231,6 @@ class ImageGenerationAgent(BaseAgent):
                 logger.info(f"Scheduler '{preferred}' not available, using '{scheduler}'")
                 return scheduler
         
-        # Last resort
         fallback = self.available_schedulers[0]
         logger.warning(f"Using fallback scheduler: {fallback}")
         return fallback
@@ -315,10 +294,8 @@ class ImageGenerationAgent(BaseAgent):
         
         prompt_lower = prompt.lower()
         
-        # Check for text keywords
         for keyword in self.image_config["text_detection_keywords"]:
             if keyword in prompt_lower:
-                # Extract text in quotes
                 quote_patterns = [
                     r'["\']([^"\']+)["\']',  # Single or double quotes
                     r'says\s+([A-Z0-9\s]+?)(?:,|\.|$)',  # After "says"
@@ -332,7 +309,6 @@ class ImageGenerationAgent(BaseAgent):
                         logger.info(f"✓ Text detected: '{text_content}'")
                         return True, text_content
                 
-                # If keyword found but no quotes, still mark as text request
                 logger.info(f"✓ Text request detected (no quotes)")
                 return True, None
         
@@ -351,7 +327,6 @@ class ImageGenerationAgent(BaseAgent):
             Tuple of (enhanced_prompt, negative_prompt)
         """
         
-        # Text-specific quality keywords
         text_quality_keywords = [
             "clear legible text",
             "sharp typography",
@@ -361,7 +336,6 @@ class ImageGenerationAgent(BaseAgent):
             "well-defined text"
         ]
         
-        # Negative prompt for text
         text_negative_prompt = [
             "blurry text",
             "illegible text",
@@ -376,13 +350,10 @@ class ImageGenerationAgent(BaseAgent):
             "deformed"
         ]
         
-        # Build enhanced prompt
         enhanced = user_prompt.strip()
         
-        # Add text quality modifiers
         enhanced += ", " + ", ".join(text_quality_keywords[:4])
         
-        # Add general quality
         enhanced += ", masterpiece, best quality, highly detailed, 8k uhd"
         
         logger.info(f"Original prompt: {user_prompt}")
@@ -405,11 +376,9 @@ class ImageGenerationAgent(BaseAgent):
             Tuple of (enhanced_prompt, negative_prompt)
         """
         
-        # If text request, use text-specific enhancement
         if has_text:
             return self._enhance_prompt_for_text(user_prompt)
         
-        # Otherwise, use regular enhancement
         quality_keywords = [
             "masterpiece",
             "best quality", 
@@ -496,7 +465,6 @@ class ImageGenerationAgent(BaseAgent):
         logger.info(f"Image Generation Agent processing: '{prompt[:50]}...'")
         logger.info(f"Backend: {self.backend} | Model: {self.model} | Content Type: {content_type}")
         
-        # Check circuit breaker
         if self.circuit_open:
             logger.warning(f"Circuit breaker OPEN - too many consecutive failures")
             if self.image_config["enable_fallback"]:
@@ -512,7 +480,6 @@ class ImageGenerationAgent(BaseAgent):
                 )
                 return
         
-        # Try generation with retries
         max_retries = self.image_config["max_retries"]
         
         for attempt in range(max_retries + 1):
@@ -524,7 +491,6 @@ class ImageGenerationAgent(BaseAgent):
                 
                 result = await self._generate_image_internal(prompt, style, size, content_type)
                 
-                # Success! Reset failure counter
                 self.consecutive_failures = 0
                 self.circuit_open = False
                 self.last_successful_generation = time.time()
@@ -658,10 +624,8 @@ class ImageGenerationAgent(BaseAgent):
         
         logger.info(f"ComfyUI generation started for: '{prompt[:50]}...'")
         
-        # Parse size
         width, height = map(int, size.split('x'))
         
-        # Detect if this is a text request
         has_text, text_content = self._detect_text_request(prompt)
         
         if has_text:
@@ -669,14 +633,12 @@ class ImageGenerationAgent(BaseAgent):
             if text_content:
                 logger.info(f"   Target text: '{text_content}'")
         
-        # Enhance the prompt (now with text awareness)
         enhanced_prompt, negative_prompt = self._enhance_prompt_for_quality(
             prompt, 
             content_type,
             has_text=has_text
         )
         
-        # Build workflow (now with text-optimized settings)
         workflow = self._build_comfyui_workflow(
             enhanced_prompt, 
             width, 
@@ -685,7 +647,6 @@ class ImageGenerationAgent(BaseAgent):
             has_text=has_text
         )
         
-        # Submit prompt
         url = f"{self.client['url']}/prompt"
         logger.info(f"Submitting to: {url}")
         
@@ -713,7 +674,6 @@ class ImageGenerationAgent(BaseAgent):
         except Exception as e:
             raise Exception(f"ComfyUI submission failed: {e}")
         
-        # Wait for completion
         try:
             image_path = await self._wait_for_comfyui_result(prompt_id, prompt)
             
@@ -757,19 +717,16 @@ class ImageGenerationAgent(BaseAgent):
         Now with text-specific optimizations and sampler validation
         """
         
-        # Determine checkpoint and settings
         if "sdxl" in self.model.lower():
             checkpoint = "sd_xl_base_1.0.safetensors"
             
             if has_text:
-                # Text-optimized settings for SDXL
                 steps = 30      # More steps for text clarity
                 cfg = 8.5       # Higher CFG for better prompt adherence
                 sampler_preferred = "euler"  # CHANGED: safer default
                 scheduler_preferred = "normal"
                 logger.info("   Using TEXT-OPTIMIZED settings for SDXL")
             else:
-                # Regular settings
                 steps = 25
                 cfg = 7.0
                 sampler_preferred = "dpmpp_2m"
@@ -789,7 +746,6 @@ class ImageGenerationAgent(BaseAgent):
                 sampler_preferred = "dpmpp_2m"
                 scheduler_preferred = "karras"
         
-        # Get safe sampler and scheduler
         sampler = self._get_safe_sampler(sampler_preferred, is_text=has_text)
         scheduler = self._get_safe_scheduler(scheduler_preferred)
         
@@ -881,7 +837,6 @@ class ImageGenerationAgent(BaseAgent):
             check_count += 1
             elapsed = time.time() - start_time
             
-            # Log progress every 10 seconds
             if elapsed - (last_log_time - start_time) >= 10:
                 logger.info(f"   Waiting... ({elapsed:.1f}s elapsed)")
                 last_log_time = time.time()
@@ -899,12 +854,10 @@ class ImageGenerationAgent(BaseAgent):
                     if prompt_id in history:
                         outputs = history[prompt_id].get('outputs', {})
                         
-                        # Check for errors
                         if 'error' in history[prompt_id]:
                             error = history[prompt_id]['error']
                             raise Exception(f"ComfyUI generation error: {error}")
                         
-                        # Find the SaveImage node output
                         for node_id, output in outputs.items():
                             if 'images' in output:
                                 image_info = output['images'][0]
@@ -914,7 +867,6 @@ class ImageGenerationAgent(BaseAgent):
                                 
                                 return await self._download_from_comfyui(image_info, prompt)
                         
-                        # Check status
                         status = history[prompt_id].get('status', {})
                         if status != last_status:
                             logger.debug(f"Status update: {status}")
@@ -947,7 +899,6 @@ class ImageGenerationAgent(BaseAgent):
         
         logger.info(f"   Downloading from ComfyUI...")
         
-        # Retry download up to 3 times
         for attempt in range(3):
             try:
                 img_response = await asyncio.to_thread(
@@ -960,7 +911,6 @@ class ImageGenerationAgent(BaseAgent):
                 if img_response.status_code != 200:
                     raise Exception(f"Download failed: {img_response.status_code}")
                 
-                # Save locally
                 timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
                 safe_prompt = "".join(c for c in prompt[:30] if c.isalnum() or c in (' ', '-', '_')).strip()
                 safe_prompt = safe_prompt.replace(' ', '_')

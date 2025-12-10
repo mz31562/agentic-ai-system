@@ -1,4 +1,3 @@
-# test_comfyui_connection.py
 import requests
 import os
 from dotenv import load_dotenv
@@ -11,13 +10,11 @@ def test_comfyui():
     print("🔍 COMFYUI CONNECTION TEST")
     print("="*70)
     
-    # Check environment variables
     print("\n1️⃣ Environment Variables:")
     print(f"   IMAGE_BACKEND: {os.getenv('IMAGE_BACKEND', 'NOT SET')}")
     print(f"   IMAGE_MODEL: {os.getenv('IMAGE_MODEL', 'NOT SET')}")
     print(f"   COMFYUI_URL: {os.getenv('COMFYUI_URL', 'NOT SET')}")
     
-    # Test connection
     url = os.getenv('COMFYUI_URL', 'http://127.0.0.1:8188')
     print(f"\n2️⃣ Testing connection to: {url}")
     

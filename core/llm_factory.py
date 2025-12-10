@@ -1,4 +1,3 @@
-# core/llm_factory.py
 import os
 from typing import Optional
 import logging
@@ -15,7 +14,6 @@ def create_llm_manager() -> LLMManager:
     """
     manager = LLMManager()
     
-    # Register Ollama backends
     if os.getenv("LLM_OLLAMA_ENABLED", "false").lower() == "true":
         base_url = os.getenv("LLM_OLLAMA_BASE_URL", "http://localhost:11434")
         models = os.getenv("LLM_OLLAMA_MODELS", "llama3").split(",")
@@ -23,7 +21,6 @@ def create_llm_manager() -> LLMManager:
         for model in models:
             model = model.strip()
             
-            # Better quality assessment for Ollama models
             if "llama3" in model.lower() or "llama-3" in model.lower():
                 reasoning_quality = 7
                 creative_quality = 8
@@ -63,7 +60,6 @@ def create_llm_manager() -> LLMManager:
             
             manager.register_backend(f"ollama_{model}", config)
     
-    # Register Groq backends (ENHANCED)
     if os.getenv("LLM_GROQ_ENABLED", "false").lower() == "true":
         api_key = os.getenv("LLM_GROQ_API_KEY")
         if api_key:
@@ -72,12 +68,9 @@ def create_llm_manager() -> LLMManager:
             for model in models:
                 model = model.strip()
                 
-                # Smart detection of model capabilities
                 model_lower = model.lower()
                 
-                # Detect model size and version
                 if "70b" in model_lower or "3.3" in model_lower:
-                    # Large models - High quality
                     reasoning_quality = 9
                     creative_quality = 9
                     code_quality = 9
@@ -85,7 +78,6 @@ def create_llm_manager() -> LLMManager:
                     latency = 800  # Slightly slower for larger models
                     
                 elif "8b" in model_lower:
-                    # Small fast models - Good for simple tasks
                     reasoning_quality = 7
                     creative_quality = 7
                     code_quality = 7
@@ -93,7 +85,6 @@ def create_llm_manager() -> LLMManager:
                     latency = 400  # Very fast
                     
                 elif "mixtral" in model_lower:
-                    # Mixtral models
                     reasoning_quality = 8
                     creative_quality = 8
                     code_quality = 8
@@ -101,7 +92,6 @@ def create_llm_manager() -> LLMManager:
                     latency = 600
                     
                 else:
-                    # Default for unknown Groq models
                     reasoning_quality = 8
                     creative_quality = 8
                     code_quality = 8
@@ -124,11 +114,9 @@ def create_llm_manager() -> LLMManager:
                     supports_streaming=True
                 )
                 
-                # Better backend naming
                 backend_name = f"groq_{model.replace('-', '_').replace('.', '_')}"
                 manager.register_backend(backend_name, config)
     
-    # Register Claude backends (ENHANCED)
     if os.getenv("LLM_CLAUDE_ENABLED", "false").lower() == "true":
         api_key = os.getenv("LLM_CLAUDE_API_KEY")
         if api_key:
@@ -138,9 +126,7 @@ def create_llm_manager() -> LLMManager:
                 model = model.strip()
                 model_lower = model.lower()
                 
-                # Better Claude model detection
                 if "opus" in model_lower:
-                    # Opus - Most capable
                     reasoning_quality = 10
                     creative_quality = 10
                     code_quality = 10
@@ -148,7 +134,6 @@ def create_llm_manager() -> LLMManager:
                     latency = 2000
                     
                 elif "sonnet" in model_lower:
-                    # Sonnet - Balanced
                     reasoning_quality = 10
                     creative_quality = 10
                     code_quality = 9
@@ -156,7 +141,6 @@ def create_llm_manager() -> LLMManager:
                     latency = 1500
                     
                 elif "haiku" in model_lower:
-                    # Haiku - Fast and cheap
                     reasoning_quality = 8
                     creative_quality = 8
                     code_quality = 8
@@ -164,7 +148,6 @@ def create_llm_manager() -> LLMManager:
                     latency = 800
                     
                 else:
-                    # Default Claude
                     reasoning_quality = 9
                     creative_quality = 9
                     code_quality = 9
@@ -191,7 +174,6 @@ def create_llm_manager() -> LLMManager:
                 
                 manager.register_backend(f"claude_{model.replace('-', '_')}", config)
     
-    # Register OpenAI backends (ENHANCED)
     if os.getenv("LLM_OPENAI_ENABLED", "false").lower() == "true":
         api_key = os.getenv("LLM_OPENAI_API_KEY")
         if api_key:
@@ -201,9 +183,7 @@ def create_llm_manager() -> LLMManager:
                 model = model.strip()
                 model_lower = model.lower()
                 
-                # Better OpenAI model detection
                 if "gpt-4" in model_lower and "turbo" not in model_lower and "mini" not in model_lower:
-                    # GPT-4 (original) - Most capable but expensive
                     reasoning_quality = 10
                     creative_quality = 9
                     code_quality = 10
@@ -212,7 +192,6 @@ def create_llm_manager() -> LLMManager:
                     max_tokens = 8192
                     
                 elif "gpt-4-turbo" in model_lower or "gpt-4o" in model_lower:
-                    # GPT-4 Turbo/4o - Fast and capable
                     reasoning_quality = 10
                     creative_quality = 9
                     code_quality = 10
@@ -221,7 +200,6 @@ def create_llm_manager() -> LLMManager:
                     max_tokens = 128000 if "turbo" in model_lower else 8192
                     
                 elif "gpt-4o-mini" in model_lower:
-                    # GPT-4o Mini - Cheap and fast
                     reasoning_quality = 8
                     creative_quality = 8
                     code_quality = 8
@@ -230,7 +208,6 @@ def create_llm_manager() -> LLMManager:
                     max_tokens = 16384
                     
                 elif "gpt-3.5" in model_lower:
-                    # GPT-3.5 Turbo - Fast and cheap
                     reasoning_quality = 7
                     creative_quality = 7
                     code_quality = 7
@@ -239,7 +216,6 @@ def create_llm_manager() -> LLMManager:
                     max_tokens = 16384
                     
                 else:
-                    # Default OpenAI
                     reasoning_quality = 8
                     creative_quality = 8
                     code_quality = 8
@@ -247,7 +223,6 @@ def create_llm_manager() -> LLMManager:
                     latency = 1000
                     max_tokens = 4096
                 
-                # Speed score based on latency
                 if latency < 1000:
                     speed_score = 9
                 elif latency < 2000:
@@ -275,7 +250,6 @@ def create_llm_manager() -> LLMManager:
                 
                 manager.register_backend(f"openai_{model.replace('-', '_')}", config)
     
-    # Show what actually initialized with detailed info
     initialized = []
     failed = []
     
@@ -306,7 +280,6 @@ def create_llm_manager() -> LLMManager:
     if initialized:
         logger.info(f"╠══════════════════════════════════════════════════════════════")
         
-        # Group by provider
         by_provider = {}
         for backend in initialized:
             provider = backend["provider"]
@@ -333,7 +306,6 @@ def create_llm_manager() -> LLMManager:
     
     logger.info(f"╚══════════════════════════════════════════════════════════════")
     
-    # Show budget settings
     daily_budget = os.getenv("LLM_DAILY_BUDGET", "5.00")
     per_request = os.getenv("LLM_MAX_COST_PER_REQUEST", "0.05")
     logger.info(f"")

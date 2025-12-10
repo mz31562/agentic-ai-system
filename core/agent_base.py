@@ -1,4 +1,3 @@
-# C:\Users\MohammedZaid\Desktop\agentic-ai-system\core\agent_base.py
 import asyncio
 import uuid
 from abc import ABC, abstractmethod
@@ -39,11 +38,9 @@ class BaseAgent(ABC):
         self.message_bus = message_bus
         self.capabilities = capabilities or []
         
-        # Agent state
         self.status = "initialized"  # initialized, running, busy, stopped
         self.is_running = False
         
-        # Message tracking
         self.pending_requests: Dict[str, Message] = {}  # correlation_id: message
         self.processed_count = 0
         
@@ -76,7 +73,6 @@ class BaseAgent(ABC):
         logger.info(f"Starting agent '{self.name}'...")
         
         try:
-            # Run agent-specific setup
             await self.setup()
             
             self.is_running = True
@@ -97,7 +93,6 @@ class BaseAgent(ABC):
         self.is_running = False
         self.status = "stopped"
         
-        # Wait for pending requests to complete (with timeout) - handle cancellation
         if self.pending_requests:
             logger.info(f"Waiting for {len(self.pending_requests)} pending requests...")
             try:
@@ -140,7 +135,6 @@ class BaseAgent(ABC):
         
         await self.message_bus.publish(message)
         
-        # Track if it's a request
         if message_type == "request" and correlation_id:
             self.pending_requests[correlation_id] = message
         
@@ -204,7 +198,6 @@ class BaseAgent(ABC):
             correlation_id=original_message.correlation_id
         )
         
-        # Remove from pending if this was a request
         if original_message.correlation_id in self.pending_requests:
             del self.pending_requests[original_message.correlation_id]
     
@@ -285,7 +278,6 @@ class BaseAgent(ABC):
         try:
             self.status = "busy"
             
-            # Call the agent-specific handler
             await self.handle_message(message)
             
             self.processed_count += 1
@@ -297,7 +289,6 @@ class BaseAgent(ABC):
                 exc_info=True
             )
             
-            # Send error response
             await self.send_error(
                 original_message=message,
                 error=str(e),
