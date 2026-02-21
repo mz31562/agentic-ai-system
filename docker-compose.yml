@@ -1,0 +1,71 @@
+version: "3.9"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# AGENTIC AI SYSTEM — Docker Compose
+#
+# Dev setup (Windows laptop):
+#   docker-compose up backend
+#
+# Full stack when frontend is ready:
+#   docker-compose up backend frontend
+#
+# NOTE: ComfyUI and Ollama run OUTSIDE Docker on your machine because:
+#   - ComfyUI needs GPU access (complex on Windows Docker)
+#   - Ollama needs direct hardware access for performance
+#   - Both are accessible to the container via host.docker.internal
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+
+  # ── Python backend (API mode) ─────────────────────────────────────────────
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: agentic_backend
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      APP_MODE: api
+      # Reach ComfyUI and Ollama running on your Windows host machine
+      COMFYUI_URL: http://host.docker.internal:8188
+      LLM_OLLAMA_BASE_URL: http://host.docker.internal:11434
+      # API binding
+      API_HOST: 0.0.0.0
+      API_PORT: "8000"
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./generated_images:/app/generated_images
+      - ./logs:/app/logs
+    networks:
+      - agentic_net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # ── React frontend (uncomment when ready) ────────────────────────────────
+  # frontend:
+  #   build:
+  #     context: ./frontend
+  #     dockerfile: Dockerfile
+  #   container_name: agentic_frontend
+  #   restart: unless-stopped
+  #   ports:
+  #     - "3000:3000"
+  #   environment:
+  #     VITE_API_URL: http://localhost:8000
+  #     VITE_WS_URL: ws://localhost:8000
+  #   depends_on:
+  #     backend:
+  #       condition: service_healthy
+  #   networks:
+  #     - agentic_net
+
+networks:
+  agentic_net:
+    driver: bridge

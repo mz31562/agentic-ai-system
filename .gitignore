@@ -1,44 +1,30 @@
-cd C:\Users\MohammedZaid\Desktop\agentic-ai-system
+# Secrets
+.env
 
-# Create .gitignore file
-notepad .gitignore
-```
-
-**Paste this into .gitignore:**
-```
 # Python
 __pycache__/
-*.py[cod]
-*$py.class
-*.so
-.Python
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+.venv/
 venv/
 env/
-ENV/
 
-# Project specific
-ComfyUI/
+# Generated content — mounted as volumes in Docker
 generated_images/
-*.png
-*.jpg
-*.jpeg
+logs/
 
-# Environment
-.env
+# ComfyUI — third party
+ComfyUI/
 
 # IDE
 .vscode/
 .idea/
-*.swp
-*.swo
+*.DS_Store
 
-# OS
-.DS_Store
-Thumbs.db
-
-# Logs
-*.log
-
-# Temporary files
-*.tmp
-*.temp
+# Frontend
+frontend/node_modules/
+frontend/build/
